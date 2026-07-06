@@ -771,7 +771,11 @@ async function serveStatic(pathname, res) {
   if (filePath !== ROOT && !filePath.startsWith(`${ROOT}${sep}`)) return json(res, 403, { error: "Forbidden" });
   try {
     const data = await readFile(filePath);
-    res.writeHead(200, { "Content-Type": mime[extname(filePath)] || "application/octet-stream" });
+    const extension = extname(filePath);
+    res.writeHead(200, {
+      "Content-Type": mime[extension] || "application/octet-stream",
+      "Cache-Control": extension === ".html" ? "no-cache, must-revalidate" : "public, max-age=300"
+    });
     res.end(data);
   } catch {
     json(res, 404, { error: "Not found" });
