@@ -24,3 +24,6 @@
   vertical-align: 2px;
 }
 .compact { padding: 8px 11px; font-size: 10px; }
+.system-status { color: var(--muted); font-size: 10px; }
+.system-status.ready { color: var(--green2); }
+.system-status.warning { color: #a36b20; }

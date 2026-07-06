@@ -20,6 +20,8 @@ import {
 } from "./lib/core.js";
 import { buildInsightDeck, buildInsightDocx, buildMatrixWorkbook, buildRoleTranscriptDocx } from "./lib/office-exporter.mjs";
 import { AuthStore } from "./lib/auth-store.mjs";
+import { PostgresAuthStore } from "./lib/postgres-auth-store.mjs";
+import { mailConfigured, sendAccessApprovedEmail } from "./lib/mailer.mjs";
 
 const ROOT = join(process.cwd(), "public");
 const PORT = Number(process.env.PORT || 4174);
@@ -36,7 +38,9 @@ const DIRECT_AUDIO_LIMIT = 24 * 1024 * 1024;
 const LARGE_UPLOAD_LIMIT = 2 * 1024 * 1024 * 1024;
 const AUDIO_CHUNK_SECONDS = 10 * 60;
 await mkdir(JOB_DIR, { recursive: true });
-const authStore = await AuthStore.create(join(DATA_DIR, "medvoice.sqlite"));
+const authStore = process.env.DATABASE_URL
+  ? await PostgresAuthStore.create(process.env.DATABASE_URL)
+  : await AuthStore.create(join(DATA_DIR, "medvoice.sqlite"));
 if (AUTH_REQUIRED) {
   if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) throw new Error("在线权限模式需要配置 ADMIN_EMAIL 和 ADMIN_PASSWORD");
   await authStore.ensureAdmin(process.env.ADMIN_EMAIL, process.env.ADMIN_PASSWORD);
@@ -446,7 +450,7 @@ async function handleAuth(req, res, pathname) {
 async function handleAdmin(req, res, pathname) {
   const admin = requireUser(req, res, "admin");
   if (!admin) return;
-  if (pathname === "/api/admin/users" && req.method === "GET") return json(res, 200, { users: authStore.listUsers() });
+  if (pathname === "/api/admin/users" && req.method === "GET") return json(res, 200, { users: await authStore.listUsers() });
   if (pathname === "/api/admin/users" && req.method === "POST") {
     const payload = await readJson(req, 100_000);
     return json(res, 200, await authStore.addUser(payload.email, payload.role));
@@ -455,14 +459,19 @@ async function handleAdmin(req, res, pathname) {
   if (userMatch && req.method === "PATCH") {
     const payload = await readJson(req, 100_000);
     if (Number(userMatch[1]) === admin.id && payload.active === false) throw new Error("不能停用当前管理员账号");
-    authStore.setUserActive(userMatch[1], Boolean(payload.active));
+    await authStore.setUserActive(userMatch[1], Boolean(payload.active));
     return json(res, 200, { updated: true });
   }
-  if (pathname === "/api/admin/requests" && req.method === "GET") return json(res, 200, { requests: authStore.listRequests() });
+  if (pathname === "/api/admin/requests" && req.method === "GET") return json(res, 200, { requests: await authStore.listRequests() });
   const requestMatch = pathname.match(/^\/api\/admin\/requests\/(\d+)\/(approve|reject)$/);
   if (requestMatch && req.method === "POST") {
-    if (requestMatch[2] === "approve") return json(res, 200, await authStore.approveRequest(requestMatch[1], admin.id));
-    authStore.rejectRequest(requestMatch[1], admin.id);
+    if (requestMatch[2] === "approve") {
+      if (!mailConfigured()) throw new Error("邮件服务尚未配置，暂不能批准申请；请先设置 BREVO_API_KEY 与 MAIL_FROM_EMAIL");
+      const credentials = await authStore.approveRequest(requestMatch[1], admin.id);
+      const delivery = await sendAccessApprovedEmail(credentials);
+      return json(res, 200, { email: credentials.email, emailed: true, deliveryId: delivery.id });
+    }
+    await authStore.rejectRequest(requestMatch[1], admin.id);
     return json(res, 200, { rejected: true });
   }
   json(res, 404, { error: "管理接口不存在" });
@@ -783,7 +792,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname.startsWith("/api/admin/")) return await handleAdmin(req, res, url.pathname);
     if (req.method === "GET" && url.pathname === "/api/health") {
-      return json(res, 200, { ok: true, apiConfigured: Boolean(API_KEY), apiKeySource: process.env.OPENAI_API_KEY ? "server" : API_KEY ? "temporary" : "none", authRequired: AUTH_REQUIRED, mapModel: MAP_MODEL, synthesisModel: SYNTHESIS_MODEL });
+      return json(res, 200, { ok: true, apiConfigured: Boolean(API_KEY), apiKeySource: process.env.OPENAI_API_KEY ? "server" : API_KEY ? "temporary" : "none", authRequired: AUTH_REQUIRED, storage: process.env.DATABASE_URL ? "postgres" : "sqlite", emailConfigured: mailConfigured(), mapModel: MAP_MODEL, synthesisModel: SYNTHESIS_MODEL });
     }
     if (url.pathname.startsWith("/api/") && !requireUser(req, res)) return;
     if (req.method === "POST" && url.pathname === "/api/analyze") return await handleAnalyze(req, res);

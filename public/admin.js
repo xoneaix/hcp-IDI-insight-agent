@@ -30,7 +30,11 @@ async function load() {
   const session = await api("/api/auth/session");
   if (!session.user || session.user.role !== "admin") return location.assign("/");
   $("#adminIdentity").textContent = `管理员：${session.user.email}`;
-  const [usersData, requestsData] = await Promise.all([api("/api/admin/users"), api("/api/admin/requests")]);
+  const [usersData, requestsData, health] = await Promise.all([api("/api/admin/users"), api("/api/admin/requests"), api("/api/health")]);
+  const persistent = health.storage === "postgres";
+  const emailReady = health.emailConfigured === true;
+  $("#adminSystemStatus").textContent = `${persistent ? "✓ 历史账号已持久保存" : "⚠ 当前账号仍为临时存储"} · ${emailReady ? "✓ 审批邮件已启用" : "⚠ 审批邮件待配置"}`;
+  $("#adminSystemStatus").className = `system-status ${persistent && emailReady ? "ready" : "warning"}`;
 
   $("#userRows").innerHTML = usersData.users.map((user) => `<tr><td>${esc(user.email)}</td><td>${user.role === "admin" ? "管理员" : "试用用户"}</td><td><span class="pill ${user.active ? "" : "off"}">${user.active ? "已启用" : "已停用"}</span></td><td>${user.must_change_password ? "待修改" : "已完成"}</td><td>${esc(displayTime(user.last_login_at))}</td><td><span class="row-actions"><button data-reset="${user.id}" data-email="${esc(user.email)}" data-role="${user.role}">重置密码</button><button data-toggle="${user.id}" data-active="${user.active}">${user.active ? "停用" : "启用"}</button></span></td></tr>`).join("") || '<tr><td class="empty" colspan="6">暂无用户</td></tr>';
 
@@ -59,8 +63,7 @@ function bindRows() {
       button.disabled = true;
       button.textContent = "正在批准…";
       const data = await api(`/api/admin/requests/${button.dataset.approve}/approve`, { method: "POST" });
-      showCredential(data.email, data.temporaryPassword);
-      $("#adminMessage").textContent = "申请已批准。请复制临时凭据并安全发送给申请人。";
+      $("#adminMessage").textContent = `申请已批准，临时账号与密码已自动发送至 ${data.email}。`;
       await load();
     };
   });

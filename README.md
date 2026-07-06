@@ -35,6 +35,10 @@ export OPENAI_API_KEY="你的密钥"
 - `ADMIN_EMAIL`：首位管理员邮箱，必须以 `@hisunpharm.com` 结尾
 - `ADMIN_PASSWORD`：管理员初始密码，至少 12 位
 - `DATA_DIR`：SQLite 用户数据库与临时转录任务目录
+- `DATABASE_URL`：生产环境 PostgreSQL 连接串；配置后账号、申请和历史登录记录跨部署保留
+- `BREVO_API_KEY`：审批邮件的 Brevo HTTPS API Key
+- `MAIL_FROM_EMAIL`：已在邮件服务中验证的发件地址
+- `MAIL_FROM_NAME`：邮件显示的发件人名称
 
 真实模式使用 `gpt-4o-transcribe-diarize` 的 `diarized_json` 完成说话人分段，并通过 Responses API 的 Structured Outputs 生成稳定的结构化结果。参考：[说话人分离转录](https://developers.openai.com/api/docs/guides/speech-to-text#speaker-diarization)、[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)、[GPT-5.5 指南](https://developers.openai.com/api/docs/guides/latest-model)。
 
@@ -91,6 +95,7 @@ export OPENAI_API_KEY="你的密钥"
 3. 系统生成一次性临时密码；用户首次登录必须修改密码。
 4. 管理员可停用账号、重置临时密码，并查看最近登录状态。
 5. 密码使用 scrypt 加盐哈希，登录会话使用 HttpOnly、SameSite Cookie；数据库不保存明文密码。
+6. 配置邮件服务后，管理员批准申请会自动生成临时密码并发送至申请人的公司邮箱。
 
 本机验证示例：
 
