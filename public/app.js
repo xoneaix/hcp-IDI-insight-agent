@@ -67,6 +67,13 @@ async function checkPortalSession() {
     if (data.user?.mustChangePassword) return location.assign("/login?change=1");
     $("#adminAccess").hidden = data.user?.role !== "admin" || !state.authRequired;
     $("#portalLogout").hidden = !state.authRequired;
+    if (data.user?.role === "admin" && state.authRequired) {
+      const requestsResponse = await fetch(`${API_BASE}/api/admin/requests`);
+      const requestsData = await requestsResponse.json();
+      const pendingCount = (requestsData.requests || []).filter((item) => item.status === "pending").length;
+      $("#adminAccess").textContent = pendingCount ? `Access 管理 · ${pendingCount}` : "Access 管理";
+      $("#adminAccess").title = pendingCount ? `${pendingCount} 个试用申请待审批` : "暂无待审批申请";
+    }
   } catch {}
 }
 

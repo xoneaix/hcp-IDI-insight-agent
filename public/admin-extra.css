@@ -1,0 +1,26 @@
+.panel-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.panel-title-row > div { min-width: 0; }
+.panel-title-row p {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.65;
+}
+.count-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e8f0ec;
+  color: var(--green);
+  font-size: 10px;
+  vertical-align: 2px;
+}
+.compact { padding: 8px 11px; font-size: 10px; }
