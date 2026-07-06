@@ -6,7 +6,6 @@ services:
     region: singapore
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
-    maxShutdownDelaySeconds: 300
     autoDeployTrigger: commit
     envVars:
       - key: AUTH_REQUIRED
