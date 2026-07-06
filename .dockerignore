@@ -1,0 +1,15 @@
+.git
+.gitignore
+.DS_Store
+.env
+.env.*
+!.env.example
+node_modules
+data
+coverage
+*.log
+*.zip
+*.mp3
+*.mp4
+*.m4a
+*.wav

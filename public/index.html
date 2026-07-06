@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="description" content="MedVoice Insight 医药访谈洞察超智能体" />
+    <title>MedVoice Insight · 医药访谈洞察超智能体</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#" aria-label="MedVoice 首页">
+          <span class="brand-mark">M</span>
+          <span><strong>MedVoice</strong><small>INSIGHT AGENT</small></span>
+        </a>
+
+        <div class="project-switcher">
+          <small>当前研究项目</small>
+          <button id="projectButton"><span id="projectLabel">未命名访谈项目</span><b>⌄</b></button>
+        </div>
+
+        <nav aria-label="主导航">
+          <button class="nav-item active" data-view="overview"><i>⌂</i><span>洞察总览</span></button>
+          <button class="nav-item" data-view="transcripts"><i>◫</i><span>访谈采集与转录</span><em id="navCount">0</em></button>
+          <button class="nav-item" data-view="outline"><i>⌘</i><span>大纲驱动·并发分析</span></button>
+          <button class="nav-item" data-view="matrix"><i>⌗</i><span>主题矩阵</span></button>
+          <button class="nav-item" data-view="report"><i>≣</i><span>洞察报告</span></button>
+        </nav>
+
+        <div class="agent-status">
+          <div><span class="pulse"></span><strong>Insight Engine</strong><em id="modeLabel">检查连接…</em></div>
+          <p><i>✓</i> 证据可追溯</p>
+          <p><i>✓</i> 隐私字段脱敏</p>
+          <p><i>✓</i> 人工复核保留</p>
+        </div>
+
+        <div class="user-card"><span>NL</span><div><strong>研究项目组</strong><small>Market Research</small></div><button aria-label="设置">•••</button></div>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <div class="breadcrumb"><span>定性研究</span><b>/</b><strong id="breadcrumbProject">未命名访谈项目</strong></div>
+          <div class="top-actions">
+            <div class="privacy-badge"><i>◆</i> 合规保护已开启</div>
+            <button class="api-connect" id="apiSettingsButton"><i></i><span id="apiSettingsLabel">连接 AI</span></button>
+            <button class="secondary-button" id="adminAccess" hidden>Access 管理</button>
+            <button class="icon-button" id="portalLogout" aria-label="退出登录" title="退出登录" hidden>↪</button>
+            <button class="icon-button" id="helpButton" aria-label="帮助">?</button>
+            <button class="primary-button" id="newAnalysis"><span>＋</span> 新建分析</button>
+          </div>
+        </header>
+
+        <section class="view active" id="overview-view">
+          <div class="hero-row">
+            <div>
+              <div class="eyebrow">CROSS-INTERVIEW SYNTHESIS</div>
+              <h1>让每一条洞察，<span>都回到原话。</span></h1>
+              <p>从访谈音视频到跨样本商业洞察，AI 完成繁琐工作，人类保留最后判断。</p>
+            </div>
+            <div class="hero-actions">
+              <button class="secondary-button" id="goCollect">导入第一份访谈</button>
+              <button class="primary-button" id="goAnalyze"><span>✦</span> 进入并发分析</button>
+            </div>
+          </div>
+
+          <div class="metric-grid">
+            <article><div class="metric-icon violet">◫</div><div><small>已分析访谈</small><strong id="metricInterviews">0 <em>份</em></strong><span id="metricTypes">等待导入资料</span></div></article>
+            <article><div class="metric-icon cyan">◷</div><div><small>已转录访谈</small><strong id="metricTranscribed">0 <em>份</em></strong><span>支持中文与 English</span></div></article>
+            <article><div class="metric-icon amber">◎</div><div><small>大纲问题</small><strong id="metricQuestions">0<em>题</em></strong><span>等待导入研究大纲</span></div></article>
+            <article><div class="metric-icon green">✦</div><div><small>高价值洞察</small><strong id="metricInsights">0 <em>项</em></strong><span>分析后自动生成</span></div></article>
+          </div>
+
+          <div class="dashboard-grid">
+            <article class="panel insight-panel">
+              <div class="panel-head">
+                <div><div class="eyebrow">PRIORITIZED INSIGHTS</div><h2>高价值洞察</h2></div>
+                <div class="segmented"><button class="active" data-insight-filter="all">全部</button><button data-insight-filter="high">高置信</button><button data-insight-filter="action">待行动</button></div>
+              </div>
+              <div id="insightList" class="insight-list"></div>
+            </article>
+
+            <aside class="right-column">
+              <article class="panel signal-map">
+                <div class="panel-head"><div><div class="eyebrow">EVIDENCE MAP</div><h2>观点信号分布</h2></div><button class="text-button" data-view-jump="matrix">查看矩阵 →</button></div>
+                <div class="signal-legend"><span><i class="pos"></i>正向</span><span><i class="neutral"></i>中性</span><span><i class="neg"></i>负向 / 障碍</span></div>
+                <div id="signalChart" class="signal-chart"></div>
+              </article>
+              <article class="panel contradiction-card">
+                <div class="contradiction-icon">≠</div>
+                <div><small>DIVERGENCE DETECTED</small><h3>AI 发现 3 组关键分歧</h3><p>不同层级医院对“启动治疗时机”的判断存在明显分层，不宜用单一结论覆盖。</p></div>
+                <button data-view-jump="matrix">展开</button>
+              </article>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="transcripts-view">
+          <div class="section-title">
+            <div><div class="eyebrow">SECURE INTERVIEW CAPTURE</div><h1>访谈采集与转录</h1><p>上传既有资料或直接录音；每份文件对应一位 HCP / 受访者。</p></div>
+            <button class="primary-button" id="uploadButton">＋ 导入资料</button>
+          </div>
+          <div class="upload-zone" id="uploadZone" tabindex="0" role="button" aria-label="上传访谈资料">
+            <input id="fileInput" type="file" multiple accept="audio/*,video/*,.txt,.md,.json,.csv" hidden />
+            <div class="upload-icon">⇧</div><h3>拖放访谈录音、视频或笔录</h3>
+            <p>MP3 · WAV · MP4 · M4A · TXT · MD · CSV</p>
+            <div><button class="secondary-button" id="browseButton">选择文件</button><button class="record-button" id="recordButton"><span>●</span> 实时录音</button></div>
+          </div>
+          <div class="recording-console" id="recordingConsole" hidden>
+            <div class="recording-state"><span class="recording-pulse"></span><div><strong id="recordingStatus">准备录音</strong><small>录音文件将保留在当前浏览器会话中</small></div></div>
+            <div class="recording-options">
+              <div class="language-select"><label for="recordLanguage">实时预览语言</label><select id="recordLanguage"><option value="zh-CN">中文</option><option value="en-US">English</option></select><small>正式转录自动识别中英文</small></div>
+              <div class="language-select"><label for="recordRespondentType">受访者类型</label><select id="recordRespondentType"><option value="HCP">HCP</option><option value="患者">患者</option></select><small>保存后仍可在列表中修改</small></div>
+              <label class="auto-transcribe"><input id="autoTranscribeRecording" type="checkbox" checked /> 停止保存后自动转录</label>
+            </div>
+            <div class="recording-time" id="recordingTime">00:00</div>
+            <div class="recording-actions"><button class="primary-button" id="startRecording">开始</button><button class="secondary-button" id="pauseRecording" disabled>暂停</button><button class="stop-button" id="stopRecording" disabled>停止并保存</button></div>
+            <div class="live-transcript"><small>实时语音预览（浏览器支持时显示，最终以 AI 转录为准）</small><p id="liveTranscript">尚未开始</p></div>
+          </div>
+          <article class="panel table-panel">
+            <div class="panel-head"><div><h2>已导入资料</h2><p id="fileSummary">0 份访谈 · 等待导入</p></div><div class="table-actions"><button id="selectAll">全选</button><button class="text-button" id="clearFiles">清空</button></div></div>
+            <div class="table-wrap"><table><thead><tr><th><input id="masterCheck" type="checkbox" aria-label="全选" /></th><th>资料 / 受访者</th><th>类型</th><th>时长</th><th>处理状态</th><th>操作</th></tr></thead><tbody id="transcriptTable"></tbody></table></div>
+          </article>
+          <article class="panel role-mapper-panel">
+            <div class="role-mapper-head">
+              <div><div class="eyebrow">SEMANTIC ROLE MAPPER</div><h2>区分对话角色</h2><p>基于说话人线索和上下文语义，将转录原话整理为“访谈员提问 × HCP / 患者回答”；不改写原话，低置信内容自动标记待复核。</p></div>
+              <div class="role-actions"><button class="secondary-button" id="exportRoleWord" disabled>导出问答 Word ↗</button><button class="primary-button" id="identifyRoles" disabled><span>✦</span> 区分所选访谈角色</button></div>
+            </div>
+            <div class="role-flow">
+              <div><i>01</i><span><strong>逐行结构化</strong><small>说话人 · 时间戳 · 原话</small></span></div>
+              <div><i>02</i><span><strong>语义身份判断</strong><small>访谈员 · 受访者 · 第三方</small></span></div>
+              <div><i>03</i><span><strong>一问一答配对</strong><small>置信度 · 待复核标记</small></span></div>
+              <div><i>04</i><span><strong>Word 逐字稿</strong><small>可编辑 · 保留原话</small></span></div>
+            </div>
+            <div class="role-summary"><span id="roleSummary">等待已转录资料</span><em>AI 角色判断仅用于辅助整理，请由研究人员复核。</em></div>
+            <div class="role-preview" id="rolePreview"><div class="empty-compact">完成转录后，选择一份或多份资料并点击“区分所选访谈角色”。</div></div>
+          </article>
+        </section>
+
+        <section class="view" id="outline-view">
+          <div class="section-title">
+            <div><div class="eyebrow">OUTLINE-DRIVEN PARALLEL ANALYSIS</div><h1>大纲驱动·并发分析</h1><p>把访谈大纲转换成逐题分析框架，并对多位 HCP 的笔录并行提取。</p></div>
+            <button class="primary-button" id="runOutlineAnalysis"><span>✦</span> 开始并发分析</button>
+          </div>
+          <div class="readiness-grid">
+            <article><small>01 · 资料</small><strong id="readyFiles">0 / 0</strong><span>已转录 / 已导入</span></article>
+            <article><small>02 · 大纲</small><strong id="readyQuestions">0 题</strong><span>已识别主要问题</span></article>
+            <article><small>03 · 分析</small><strong id="readyStatus">未就绪</strong><span>完成前置条件后启动</span></article>
+            <article class="innovation-card"><small>RESEARCH GAP RADAR</small><strong>自动发现信息缺口</strong><span>标记“未覆盖问题”与值得补访的反例</span></article>
+          </div>
+          <div class="outline-workspace">
+            <article class="outline-card">
+              <div class="outline-head"><div><span>DG</span><div><h2>研究大纲 / Discussion Guide</h2><p>可上传 Word、PDF，或直接粘贴与编辑文本。</p></div></div><button id="clearOutline">清空</button></div>
+              <div class="outline-upload" id="outlineUpload" role="button" tabindex="0">
+                <input id="outlineFile" type="file" accept=".docx,.pdf,.txt,.md" hidden />
+                <span>⇧</span><div><strong>上传 Word / PDF 大纲</strong><small>DOCX · PDF · TXT · MD，扫描版 PDF 请先 OCR</small></div><button class="secondary-button" id="browseOutline">选择文件</button>
+              </div>
+              <textarea id="outlineInput" rows="13" placeholder="在此粘贴访谈大纲。例如：&#10;1. 请描述当前诊疗决策流程？&#10;2. 选择治疗方案时最重要的驱动因素是什么？&#10;3. 哪些未满足需求尚未解决？"></textarea>
+              <div class="outline-meta"><span id="outlineSource">尚未载入大纲</span><button id="parseOutline">识别主要问题</button></div>
+            </article>
+            <article class="panel question-panel">
+              <div class="panel-head"><div><div class="eyebrow">QUESTION FRAME</div><h2>已识别主要问题</h2></div><span class="question-count" id="questionCount">0</span></div>
+              <div id="questionList" class="question-list"><div class="empty-compact">上传或输入大纲后，将在这里显示逐题分析框架。</div></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="matrix-view">
+          <div class="section-title">
+            <div><div class="eyebrow">QUESTION × HCP MATRIX</div><h1>大纲问题 × HCP 分析矩阵</h1><p>横向对应大纲问题，纵向对应每位 HCP；保留原话证据与未覆盖项。</p></div>
+            <div class="matrix-actions"><div class="legend-pills"><span class="yes">● 完整覆盖</span><span class="mixed">● 部分覆盖</span><span class="no">● 未覆盖</span></div><button class="primary-button" id="exportExcel" disabled>导出 Excel ↗</button></div>
+          </div>
+          <article class="panel matrix-panel"><div class="table-wrap"><table class="matrix-table" id="matrixTable"></table></div></article>
+          <div class="matrix-bottom">
+            <article class="panel segment-card"><div class="panel-head"><div><div class="eyebrow">RESEARCH GAP RADAR</div><h2>信息缺口与补访建议</h2></div></div><div id="gapList"></div></article>
+            <article class="panel evidence-ledger"><div class="panel-head"><div><div class="eyebrow">EVIDENCE LEDGER</div><h2>原话证据账本</h2></div><button class="text-button" id="copyQuote" disabled>复制引文</button></div><blockquote id="matrixQuote">完成分析后，点击矩阵单元格查看对应原话。</blockquote><div class="quote-meta"><span id="quoteSource">暂无证据</span><em id="quoteQuestion">待分析</em></div></article>
+          </div>
+        </section>
+
+        <section class="view" id="report-view">
+          <div class="section-title report-title">
+            <div><div class="eyebrow">AI-GENERATED · HUMAN-REVIEWED</div><h1>结构化洞察报告</h1><p>结论、证据、影响与建议四层联动，可直接进入研究交付。</p></div>
+            <div><button class="secondary-button" id="copyReport" disabled>复制全文</button><button class="secondary-button" id="exportWord" disabled>导出 Word ↗</button><button class="primary-button" id="exportPpt" disabled>一键生成 PPT Deck ✦</button></div>
+          </div>
+          <div class="report-layout">
+            <aside class="report-toc"><strong>报告目录</strong><button class="active">01 执行摘要</button><button>02 样本说明</button><button>03 核心洞察</button><button>04 未满足需求</button><button>05 受访者分群</button><button>06 策略建议</button><div><span>报告可信度</span><strong id="reportConfidence">—</strong><i><b id="reportConfidenceBar" style="width:0"></b></i><small id="reportEvidenceCount">等待分析证据</small></div></aside>
+            <article class="report-paper" id="reportPaper"></article>
+          </div>
+        </section>
+
+        <footer><span>MedVoice Insight Prototype · 仅用于研究洞察，不构成医学诊断或治疗建议</span><span>所有 AI 结论应由研究、医学与合规人员复核</span></footer>
+      </main>
+    </div>
+
+    <dialog id="analysisDialog">
+      <button class="dialog-close" aria-label="关闭">×</button>
+      <div class="dialog-head"><span class="agent-orb">✦</span><div><div class="eyebrow">INSIGHT ENGINE</div><h2>多访谈智能分析</h2><p id="dialogDescription">4 个 Agent 正在协同完成证据提取与跨样本综合。</p></div></div>
+      <div class="pipeline" id="pipeline">
+        <div data-step="0"><i>01</i><span><strong>隐私检查与角色辨识</strong><small>脱敏 · 术语纠错 · 说话人映射</small></span><em>等待</em></div>
+        <div data-step="1"><i>02</i><span><strong>大纲驱动结构化提取</strong><small>逐份笔录并发分析</small></span><em>等待</em></div>
+        <div data-step="2"><i>03</i><span><strong>跨样本共识与差异对齐</strong><small>群体模式 · 反例 · 分群</small></span><em>等待</em></div>
+        <div data-step="3"><i>04</i><span><strong>洞察生成与证据校验</strong><small>结论强度 · 引文追溯 · 策略影响</small></span><em>等待</em></div>
+      </div>
+      <div class="progress-track"><i id="progressBar"></i></div>
+      <div class="dialog-footer"><span id="progressText">准备分析…</span><button class="secondary-button" id="cancelAnalysis">取消</button></div>
+    </dialog>
+
+    <dialog id="evidenceDialog" class="evidence-dialog">
+      <button class="dialog-close" aria-label="关闭">×</button>
+      <div id="evidenceContent"></div>
+    </dialog>
+
+    <dialog id="apiSettingsDialog" class="api-settings-dialog">
+      <button class="dialog-close" id="closeApiSettings" aria-label="关闭">×</button>
+      <div class="api-settings-head">
+        <span class="agent-orb">AI</span>
+        <div><div class="eyebrow">LOCAL SECURE CONNECTION</div><h2>连接 AI 转录与分析服务</h2><p>Key 仅保存在当前本机服务内存中，页面和磁盘均不保存；服务重启后自动清除。</p></div>
+      </div>
+      <form id="apiSettingsForm">
+        <label class="key-field" for="apiKeyInput"><span>OpenAI API Key</span><div><input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" required /><button type="button" id="toggleApiKey">显示</button></div></label>
+        <div class="privacy-note"><strong>真实访谈资料处理提示</strong><p>音视频会先在本机提取音轨并自动分片，再发送至所连接的 AI 服务。建议上传前完成必要脱敏，并遵循公司医学、法务与隐私制度。</p></div>
+        <label class="consent-check"><input id="dataConsent" type="checkbox" /> <span>我确认已获得该访谈资料的处理授权，并获准将资料发送至所连接的外部 AI 服务。</span></label>
+        <div class="api-settings-actions"><button class="text-button" id="clearApiKey" type="button">断开并清除 Key</button><button class="secondary-button" id="cancelApiSettings" type="button">取消</button><button class="primary-button" type="submit">验证并连接</button></div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status"></div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

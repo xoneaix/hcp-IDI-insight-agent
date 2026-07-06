@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: medvoice-insight-agent
+    runtime: docker
+    plan: starter
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    maxShutdownDelaySeconds: 300
+    autoDeployTrigger: commit
+    envVars:
+      - key: AUTH_REQUIRED
+        value: "true"
+      - key: DATA_DIR
+        value: /app/data
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: MAP_MODEL
+        value: gpt-5.4-mini
+      - key: SYNTHESIS_MODEL
+        value: gpt-5.5
+      - key: MAX_CONCURRENCY
+        value: "3"
+    disk:
+      name: medvoice-data
+      mountPath: /app/data
+      sizeGB: 10
