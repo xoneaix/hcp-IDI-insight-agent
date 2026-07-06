@@ -2,7 +2,7 @@ services:
   - type: web
     name: medvoice-insight-agent
     runtime: docker
-    plan: starter
+    plan: free
     region: singapore
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
@@ -25,7 +25,3 @@ services:
         value: gpt-5.5
       - key: MAX_CONCURRENCY
         value: "3"
-    disk:
-      name: medvoice-data
-      mountPath: /app/data
-      sizeGB: 10

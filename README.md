@@ -104,14 +104,14 @@ OPENAI_API_KEY="你的服务端密钥" \
 
 ## GitHub + Render 在线部署
 
-仓库已包含 `Dockerfile` 与 `render.yaml`。Render 会安装 FFmpeg、Word/PDF 解析组件和 Node 依赖，并挂载 `/app/data` 持久磁盘保存授权账号。
+仓库已包含 `Dockerfile` 与 `render.yaml`。当前 Blueprint 默认使用 Render Hobby 的免费 Web Service，并安装 FFmpeg、Word/PDF 解析组件和 Node 依赖。
 
 1. 将本目录推送到一个 **Private GitHub repository**。
 2. 在 Render 选择 `New > Blueprint` 并连接该仓库。
 3. 为三个 `sync: false` 变量填写秘密值：`OPENAI_API_KEY`、`ADMIN_EMAIL`、`ADMIN_PASSWORD`。
 4. 部署完成后访问 Render 提供的 HTTPS 地址；管理员后台地址为 `/admin`。
 
-不要把真实 API Key、管理员密码、SQLite 数据库或访谈文件提交到 GitHub。持久磁盘属于付费资源；若不挂载磁盘，重启或重新部署后账号数据会丢失。
+不要把真实 API Key、管理员密码、SQLite 数据库或访谈文件提交到 GitHub。免费 Web Service 不提供持久磁盘，服务重启或重新部署后，通过后台新增的账号和审批记录可能丢失；环境变量中的管理员账号仍可重新初始化。需要稳定内部试用时，应升级到 Starter 并挂载持久磁盘。
 
 ## 上线边界
 
