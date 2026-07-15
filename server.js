@@ -375,14 +375,19 @@ async function currentUser(req) {
   return authStore.sessionUser(cookies(req).mv_session);
 }
 
+function isSecureRequest(req) {
+  return Boolean(process.env.RENDER || req.headers["x-forwarded-proto"] === "https" || req.headers["x-forwarded-ssl"] === "on");
+}
+
 function sessionCookie(req, token, expires) {
-  const secure = req.headers["x-forwarded-proto"] === "https";
-  return `mv_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Expires=${expires.toUTCString()}${secure ? "; Secure" : ""}`;
+  const secure = isSecureRequest(req);
+  const maxAge = Math.max(0, Math.floor((expires.getTime() - Date.now()) / 1000));
+  return `mv_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}; Expires=${expires.toUTCString()}${secure ? "; Secure" : ""}`;
 }
 
 function clearSessionCookie(req) {
-  const secure = req.headers["x-forwarded-proto"] === "https";
-  return `mv_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure ? "; Secure" : ""}`;
+  const secure = isSecureRequest(req);
+  return `mv_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secure ? "; Secure" : ""}`;
 }
 
 async function requireUser(req, res, role) {
@@ -426,7 +431,7 @@ async function handleAuth(req, res, pathname) {
     if (!user) return json(res, 401, { error: "邮箱或密码不正确" });
     clearRateLimit();
     const session = await authStore.createSession(user.id);
-    return json(res, 200, { authenticated: true, user }, { "Set-Cookie": sessionCookie(req, session.token, session.expires) });
+    return json(res, 200, { authenticated: true, user, sessionExpiresAt: session.expires.toISOString() }, { "Set-Cookie": sessionCookie(req, session.token, session.expires) });
   }
   if (pathname === "/api/auth/logout" && req.method === "POST") {
     await authStore.deleteSession(cookies(req).mv_session);

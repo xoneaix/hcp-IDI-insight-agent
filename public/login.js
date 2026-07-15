@@ -1,13 +1,103 @@
-const $=(selector)=>document.querySelector(selector);
-const message=(text,type="")=>{const el=$("#authMessage");el.textContent=text;el.className=`message ${type}`;};
-let loginPassword="";
-function showTab(tab){document.querySelectorAll("[data-tab]").forEach(button=>button.classList.toggle("active",button.dataset.tab===tab));$("#loginForm").hidden=tab!=="login";$("#requestForm").hidden=tab!=="request";message("");}
-function showPasswordChange(){
-  $("#authTabs").hidden=true;$("#loginForm").hidden=true;$("#requestForm").hidden=true;$("#changePasswordForm").hidden=false;
-  $("#cardTitle").textContent="设置新密码";$("#cardDescription").textContent="首次登录必须更换管理员生成的临时密码。";$("#currentPassword").value=loginPassword;
+const $ = (selector) => document.querySelector(selector);
+const message = (text, type = "") => {
+  const el = $("#authMessage");
+  el.textContent = text;
+  el.className = `message ${type}`;
+};
+
+let loginPassword = "";
+
+function showTab(tab) {
+  document.querySelectorAll("[data-tab]").forEach((button) => button.classList.toggle("active", button.dataset.tab === tab));
+  $("#loginForm").hidden = tab !== "login";
+  $("#requestForm").hidden = tab !== "request";
+  message("");
 }
-document.querySelectorAll("[data-tab]").forEach(button=>button.addEventListener("click",()=>showTab(button.dataset.tab)));
-$("#loginForm").addEventListener("submit",async event=>{event.preventDefault();message("正在验证…");loginPassword=$("#loginPassword").value;try{const response=await fetch("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("#loginEmail").value,password:loginPassword})});const data=await response.json();if(!response.ok)throw new Error(data.error||"登录失败");if(data.user.mustChangePassword)return showPasswordChange();location.href="/";}catch(error){message(error.message,"error");}});
-$("#requestForm").addEventListener("submit",async event=>{event.preventDefault();message("正在提交…");try{const response=await fetch("/api/access/request",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("#requestEmail").value,note:$("#requestNote").value})});const data=await response.json();if(!response.ok)throw new Error(data.error||"提交失败");message(data.alreadyActive?"该邮箱已开通，请联系管理员重置密码。":"申请已提交。管理员批准后，账号和临时密码会自动发送至你的邮箱，请留意收件箱及垃圾邮件。","success");}catch(error){message(error.message,"error");}});
-$("#changePasswordForm").addEventListener("submit",async event=>{event.preventDefault();const next=$("#newPassword").value;if(next!==$("#confirmPassword").value)return message("两次输入的新密码不一致","error");try{const response=await fetch("/api/auth/change-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({currentPassword:$("#currentPassword").value,newPassword:next})});const data=await response.json();if(!response.ok)throw new Error(data.error||"密码修改失败");location.href="/";}catch(error){message(error.message,"error");}});
-const session=await fetch("/api/auth/session").then(response=>response.json()).catch(()=>null);if(session&&!session.authRequired)location.href="/";else if(session?.authenticated){if(session.user.mustChangePassword)showPasswordChange();else location.href="/";}
+
+function showPasswordChange() {
+  $("#authTabs").hidden = true;
+  $("#loginForm").hidden = true;
+  $("#requestForm").hidden = true;
+  $("#changePasswordForm").hidden = false;
+  $("#cardTitle").textContent = "设置新密码";
+  $("#cardDescription").textContent = "首次登录必须更换管理员生成的临时密码。";
+  $("#currentPassword").value = loginPassword;
+}
+
+async function getSession() {
+  return fetch("/api/auth/session", { cache: "no-store", credentials: "same-origin" }).then((response) => response.json()).catch(() => null);
+}
+
+async function verifySessionAfterLogin() {
+  const session = await getSession();
+  if (!session?.authenticated) {
+    throw new Error("登录已验证，但浏览器未保存登录态。请刷新页面后重试；如仍失败，请确认使用的是 https://medvoice-insight-agent.onrender.com 访问。 ");
+  }
+  return session;
+}
+
+document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => showTab(button.dataset.tab)));
+
+$("#loginForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  message("正在验证…");
+  loginPassword = $("#loginPassword").value;
+  try {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: $("#loginEmail").value, password: loginPassword })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "登录失败");
+    const session = await verifySessionAfterLogin();
+    if (session.user.mustChangePassword) return showPasswordChange();
+    location.href = "/";
+  } catch (error) {
+    message(error.message, "error");
+  }
+});
+
+$("#requestForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  message("正在提交…");
+  try {
+    const response = await fetch("/api/access/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: $("#requestEmail").value, note: $("#requestNote").value })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "提交失败");
+    message(data.alreadyActive ? "该邮箱已开通，请联系管理员重置密码。" : "申请已提交。管理员批准后，账号和临时密码会自动发送至你的邮箱，请留意收件箱及垃圾邮件。", "success");
+  } catch (error) {
+    message(error.message, "error");
+  }
+});
+
+$("#changePasswordForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const next = $("#newPassword").value;
+  if (next !== $("#confirmPassword").value) return message("两次输入的新密码不一致", "error");
+  try {
+    const response = await fetch("/api/auth/change-password", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPassword: $("#currentPassword").value, newPassword: next })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "密码修改失败");
+    location.href = "/";
+  } catch (error) {
+    message(error.message, "error");
+  }
+});
+
+const session = await getSession();
+if (session && !session.authRequired) location.href = "/";
+else if (session?.authenticated) {
+  if (session.user.mustChangePassword) showPasswordChange();
+  else location.href = "/";
+}
