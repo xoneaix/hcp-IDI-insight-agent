@@ -22,7 +22,7 @@ import { buildInsightDeck, buildInsightDocx, buildMatrixWorkbook, buildRoleTrans
 import { AuthStore } from "./lib/auth-store.mjs";
 import { PostgresAuthStore } from "./lib/postgres-auth-store.mjs";
 import { PostgresInterviewLibraryStore, SqliteInterviewLibraryStore } from "./lib/interview-library-store.mjs";
-import { mailConfigured, mailProviderLabel, sendAccessApprovedEmail } from "./lib/mailer.mjs";
+import { mailConfigured, mailProviderLabel, sendAccessApprovedEmail, sendMailDeliveryTestEmail } from "./lib/mailer.mjs";
 
 const ROOT = join(process.cwd(), "public");
 const PORT = Number(process.env.PORT || 4174);
@@ -462,6 +462,11 @@ async function handleAdmin(req, res, pathname) {
   const admin = await requireUser(req, res, "admin");
   if (!admin) return;
   if (pathname === "/api/admin/users" && req.method === "GET") return json(res, 200, { users: await authStore.listUsers() });
+  if (pathname === "/api/admin/test-email" && req.method === "POST") {
+    if (!mailConfigured()) throw new Error("邮件服务尚未配置：请先设置 BREVO_API_KEY 与 MAIL_FROM_EMAIL");
+    const delivery = await sendMailDeliveryTestEmail({ email: admin.email });
+    return json(res, 200, { emailed: true, email: admin.email, deliveryId: delivery.id, provider: delivery.provider });
+  }
   if (pathname === "/api/admin/users" && req.method === "POST") {
     const payload = await readJson(req, 100_000);
     const credentials = await authStore.addUser(payload.email, payload.role);

@@ -118,6 +118,23 @@ $("#addUserForm").onsubmit = async (event) => {
 };
 
 $("#refreshRequests").onclick = () => load().catch((error) => { $("#adminMessage").textContent = error.message; });
+$("#sendTestEmail").onclick = async () => {
+  const button = $("#sendTestEmail");
+  button.disabled = true;
+  const originalText = button.textContent;
+  button.textContent = "发送中…";
+  try {
+    const data = await api("/api/admin/test-email", { method: "POST" });
+    $("#adminMessage").textContent = `测试邮件已通过 ${data.provider || "邮件服务"} 发送至 ${data.email}。Delivery ID：${data.deliveryId || "已提交"}`;
+    $("#adminMessage").className = "message success";
+  } catch (error) {
+    $("#adminMessage").textContent = `测试邮件发送失败：${error.message}`;
+    $("#adminMessage").className = "message error";
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+};
 $("#allowlistForm").onsubmit = async (event) => {
   event.preventDefault();
   try {
