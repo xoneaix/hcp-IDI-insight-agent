@@ -24,6 +24,18 @@ test("company access store enforces domain, sessions and approval workflow", asy
     assert.equal(user.mustChangePassword, true);
     await store.changePassword(user.id, credentials.temporaryPassword, "New-password-2026!");
     assert.equal((await store.authenticate(credentials.email, "New-password-2026!")).mustChangePassword, false);
+
+    await assert.rejects(() => store.requestAccess("partner@example.com", "外部合作方试用"), /白名单/);
+    const allowed = store.addAllowedEmail("partner@example.com", "合作方验证", admin.id);
+    assert.equal(allowed.email, "partner@example.com");
+    assert.equal(store.listAllowedEmails().length, 1);
+    await store.requestAccess("partner@example.com", "外部合作方试用");
+    const externalRequest = store.listRequests().find((item) => item.email === "partner@example.com");
+    const externalCredentials = await store.approveRequest(externalRequest.id, admin.id);
+    assert.match(externalCredentials.temporaryPassword, /^MV-/);
+    assert.equal((await store.authenticate("partner@example.com", externalCredentials.temporaryPassword)).email, "partner@example.com");
+    store.removeAllowedEmail(allowed.id);
+    assert.equal(await store.authenticate("partner@example.com", externalCredentials.temporaryPassword), null);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

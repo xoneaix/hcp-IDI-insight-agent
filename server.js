@@ -471,6 +471,19 @@ async function handleAdmin(req, res, pathname) {
     await authStore.setUserActive(userMatch[1], Boolean(payload.active));
     return json(res, 200, { updated: true });
   }
+  if (pathname === "/api/admin/allowed-emails" && req.method === "GET") {
+    return json(res, 200, { allowedEmails: await authStore.listAllowedEmails() });
+  }
+  if (pathname === "/api/admin/allowed-emails" && req.method === "POST") {
+    const payload = await readJson(req, 100_000);
+    const allowedEmail = await authStore.addAllowedEmail(payload.email, payload.note, admin.id);
+    return json(res, 200, { allowedEmail });
+  }
+  const allowedEmailMatch = pathname.match(/^\/api\/admin\/allowed-emails\/(\d+)$/);
+  if (allowedEmailMatch && req.method === "DELETE") {
+    await authStore.removeAllowedEmail(allowedEmailMatch[1]);
+    return json(res, 200, { deleted: true });
+  }
   if (pathname === "/api/admin/requests" && req.method === "GET") return json(res, 200, { requests: await authStore.listRequests() });
   const requestMatch = pathname.match(/^\/api\/admin\/requests\/(\d+)\/(approve|reject)$/);
   if (requestMatch && req.method === "POST") {

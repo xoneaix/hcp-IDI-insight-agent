@@ -47,13 +47,17 @@ async function load() {
   const session = await api("/api/auth/session");
   if (!session.user || session.user.role !== "admin") return location.assign("/");
   $("#adminIdentity").textContent = `管理员：${session.user.email}`;
-  const [usersData, requestsData, health] = await Promise.all([api("/api/admin/users"), api("/api/admin/requests"), api("/api/health")]);
+  const [usersData, requestsData, allowlistData, health] = await Promise.all([api("/api/admin/users"), api("/api/admin/requests"), api("/api/admin/allowed-emails"), api("/api/health")]);
   const persistent = health.storage === "postgres";
   const emailReady = health.emailConfigured === true;
   $("#adminSystemStatus").textContent = `${persistent ? "✓ 历史账号已持久保存" : "⚠ 当前账号仍为临时存储"} · ${emailReady ? `✓ 邮件参数已配置：${esc(health.emailProvider || "邮件服务")}` : "⚠ 审批邮件待配置"} · 实际发送以重置/审批结果为准`;
   $("#adminSystemStatus").className = `system-status ${persistent && emailReady ? "ready" : "warning"}`;
 
   $("#userRows").innerHTML = usersData.users.map((user) => `<tr><td>${esc(user.email)}</td><td>${user.role === "admin" ? "管理员" : "试用用户"}</td><td><span class="pill ${user.active ? "" : "off"}">${user.active ? "已启用" : "已停用"}</span></td><td>${user.must_change_password ? "待修改" : "已完成"}</td><td>${esc(displayTime(user.last_login_at))}</td><td><span class="row-actions"><button data-reset="${user.id}" data-email="${esc(user.email)}" data-role="${user.role}">重置密码</button><button data-toggle="${user.id}" data-active="${user.active}">${user.active ? "停用" : "启用"}</button></span></td></tr>`).join("") || '<tr><td class="empty" colspan="6">暂无用户</td></tr>';
+
+  const allowedEmails = allowlistData.allowedEmails || [];
+  $("#allowlistCount").textContent = String(allowedEmails.length);
+  $("#allowlistRows").innerHTML = allowedEmails.map((item) => `<tr><td>${esc(item.email)}</td><td>${esc(item.note || "—")}</td><td>${esc(displayTime(item.created_at))}</td><td><span class="row-actions"><button data-remove-allowed="${item.id}">移除</button></span></td></tr>`).join("") || '<tr><td class="empty" colspan="4">暂无外部白名单</td></tr>';
 
   const pending = requestsData.requests.filter((item) => item.status === "pending");
   $("#pendingCount").textContent = String(pending.length);
@@ -90,6 +94,15 @@ function bindRows() {
       await load();
     };
   });
+  document.querySelectorAll("[data-remove-allowed]").forEach((button) => {
+    button.onclick = async () => {
+      if (!confirm("确定移除该外部邮箱白名单吗？移除后该外部账号将无法继续登录，需重新加入白名单。")) return;
+      await api(`/api/admin/allowed-emails/${button.dataset.removeAllowed}`, { method: "DELETE" });
+      $("#adminMessage").textContent = "外部邮箱已从白名单移除";
+      $("#adminMessage").className = "message success";
+      await load();
+    };
+  });
 }
 
 $("#addUserForm").onsubmit = async (event) => {
@@ -105,6 +118,20 @@ $("#addUserForm").onsubmit = async (event) => {
 };
 
 $("#refreshRequests").onclick = () => load().catch((error) => { $("#adminMessage").textContent = error.message; });
+$("#allowlistForm").onsubmit = async (event) => {
+  event.preventDefault();
+  try {
+    const data = await api("/api/admin/allowed-emails", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: $("#allowEmail").value, note: $("#allowNote").value }) });
+    $("#adminMessage").textContent = `${data.allowedEmail.email} 已加入外部白名单，可以申请试用或由管理员直接开通。`;
+    $("#adminMessage").className = "message success";
+    $("#allowEmail").value = "";
+    $("#allowNote").value = "";
+    await load();
+  } catch (error) {
+    $("#adminMessage").textContent = error.message;
+    $("#adminMessage").className = "message error";
+  }
+};
 $("#copyCredential").onclick = async () => {
   await navigator.clipboard.writeText(lastCredential);
   $("#adminMessage").textContent = "登录凭据已复制";
