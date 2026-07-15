@@ -19,6 +19,9 @@ const state = {
 };
 
 const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:4174" : "";
+const VIEW_STORAGE_KEY = "medvoice.activeView";
+const LOCAL_DB_NAME = "medvoice-interview-library";
+const LOCAL_DB_VERSION = 1;
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const escapeHTML = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
@@ -34,6 +37,7 @@ function toast(message, duration = 2600) {
 function showView(view) {
   $$(".view").forEach((element) => element.classList.toggle("active", element.id === `${view}-view`));
   $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
+  try { localStorage.setItem(VIEW_STORAGE_KEY, view); } catch {}
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -161,6 +165,116 @@ function interviewPayload(item) {
   };
 }
 
+function accountLibraryPrefix() {
+  return `${state.currentUser?.email || "local"}::`;
+}
+
+function localLibraryKey(item) {
+  return `${accountLibraryPrefix()}${item.serverId || item.id}`;
+}
+
+function openLocalLibrary() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) return reject(new Error("当前浏览器不支持本地资料备份"));
+    const request = indexedDB.open(LOCAL_DB_NAME, LOCAL_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains("interviews")) db.createObjectStore("interviews", { keyPath: "key" });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("本地资料库打开失败"));
+  });
+}
+
+async function withLocalStore(mode, callback) {
+  const db = await openLocalLibrary();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction("interviews", mode);
+      const store = tx.objectStore("interviews");
+      Promise.resolve(callback(store)).then(resolve, reject);
+      tx.onerror = () => reject(tx.error || new Error("本地资料库操作失败"));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+function localInterviewRecord(item) {
+  return {
+    key: localLibraryKey(item),
+    account: state.currentUser?.email || "local",
+    savedAt: Date.now(),
+    meta: interviewPayload(item),
+    serverId: item.serverId || "",
+    fileName: item.fileName || item.name,
+    fileSize: item.file?.size || item.fileSize || 0,
+    mimeType: item.file?.type || item.mimeType || "application/octet-stream",
+    hasFile: Boolean(item.file || item.hasFile),
+    blob: item.file || null
+  };
+}
+
+async function saveLocalInterview(index) {
+  const item = state.interviews[index];
+  if (!item) return;
+  try {
+    await withLocalStore("readwrite", (store) => store.put(localInterviewRecord(item)));
+    item.localPersisted = true;
+  } catch (error) {
+    item.localPersistError = error.message;
+  }
+}
+
+async function loadLocalInterviews() {
+  try {
+    const prefix = accountLibraryPrefix();
+    return await withLocalStore("readonly", (store) => new Promise((resolve, reject) => {
+      const request = store.getAll();
+      request.onsuccess = () => resolve((request.result || []).filter((record) => String(record.key || "").startsWith(prefix)));
+      request.onerror = () => reject(request.error || new Error("本地资料读取失败"));
+    }));
+  } catch {
+    return [];
+  }
+}
+
+async function clearLocalInterviews() {
+  const records = await loadLocalInterviews();
+  await withLocalStore("readwrite", async (store) => {
+    for (const record of records) store.delete(record.key);
+  }).catch(() => {});
+}
+
+function itemFromLocalRecord(record) {
+  const meta = record.meta || {};
+  const file = record.blob ? new File([record.blob], record.fileName || meta.name || "interview.webm", { type: record.mimeType || record.blob.type || "application/octet-stream" }) : null;
+  return {
+    id: meta.clientId || "HCP-001",
+    serverId: record.serverId || "",
+    name: meta.name || record.fileName || "访谈资料",
+    type: meta.type === "患者" ? "患者" : "HCP",
+    duration: Number.isFinite(Number(meta.durationSeconds)) ? formatDuration(Number(meta.durationSeconds)) : "—",
+    durationSeconds: Number.isFinite(Number(meta.durationSeconds)) ? Number(meta.durationSeconds) : null,
+    status: meta.status || "待转录",
+    progressText: meta.progressText || "",
+    error: meta.error || "",
+    text: meta.text || "",
+    draftText: meta.draftText || "",
+    roleResult: meta.roleResult || null,
+    file,
+    fileName: record.fileName || meta.name,
+    fileSize: record.fileSize || file?.size || 0,
+    mimeType: record.mimeType || file?.type || "application/octet-stream",
+    hasFile: Boolean(record.hasFile || file),
+    source: meta.source || "上传文件",
+    recordedAt: meta.recordedAt || "",
+    persisted: Boolean(record.serverId),
+    localPersisted: true,
+    selected: true
+  };
+}
+
 function applyPersistedItem(local, persisted) {
   local.serverId = persisted.serverId;
   local.persisted = true;
@@ -174,6 +288,7 @@ function applyPersistedItem(local, persisted) {
 async function persistInterview(index) {
   const item = state.interviews[index];
   if (!item || item.persisting) return;
+  await saveLocalInterview(index);
   try {
     item.persisting = true;
     let response;
@@ -198,6 +313,7 @@ async function persistInterview(index) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "资料保存失败");
     if (data.item) applyPersistedItem(item, data.item);
+    await saveLocalInterview(index);
   } catch (error) {
     item.persistError = error.message;
     toast(`资料未能保存到账户：${error.message}`, 6000);
@@ -212,10 +328,12 @@ async function persistAllInterviews() {
 
 async function loadInterviewLibrary() {
   try {
+    const localRecords = await loadLocalInterviews();
+    const localItems = localRecords.map(itemFromLocalRecord);
     const response = await fetch(`${API_BASE}/api/library/items`, { cache: "no-store" });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "资料库加载失败");
-    state.interviews = (data.items || []).map((item) => ({
+    const serverItems = (data.items || []).map((item) => ({
       id: item.id,
       serverId: item.serverId,
       name: item.name,
@@ -238,6 +356,25 @@ async function loadInterviewLibrary() {
       persisted: true,
       selected: true
     }));
+    const byId = new Map();
+    const byClientId = new Map();
+    for (const item of serverItems) {
+      byId.set(item.serverId || item.id, item);
+      byClientId.set(item.id, item);
+    }
+    for (const localItem of localItems) {
+      const key = localItem.serverId || localItem.id;
+      const serverItem = byId.get(key) || byClientId.get(localItem.id);
+      if (serverItem) {
+        serverItem.file = localItem.file;
+        serverItem.fileSize = localItem.fileSize || serverItem.fileSize;
+        serverItem.mimeType = localItem.mimeType || serverItem.mimeType;
+        serverItem.localPersisted = true;
+      } else {
+        byId.set(key, localItem);
+      }
+    }
+    state.interviews = [...byId.values()];
     state.libraryLoaded = true;
     renderAll();
     if (state.interviews.length) toast(`已恢复 ${state.interviews.length} 份账号资料`);
@@ -332,7 +469,7 @@ function renderTranscripts() {
       const fileSize = item.file?.size || item.fileSize || 0;
       return `<tr>
         <td><input class="row-check" type="checkbox" data-index="${index}" ${item.selected ? "checked" : ""} aria-label="选择 ${escapeHTML(item.id)}" /></td>
-        <td><strong>${escapeHTML(item.id)} · ${escapeHTML(item.name)}</strong><small class="${fileSize > 24 * 1024 * 1024 && !item.text ? "large-file-note" : "file-size-note"}">${item.roleResult ? "已区分角色 · 可导出问答 Word" : item.text ? "已建立逐字稿" : fileSize > 24 * 1024 * 1024 ? `${formatFileSize(fileSize)} · 服务端提取音轨并自动分片` : `${formatFileSize(fileSize)} · 等待语音转录`}${item.persisted ? " · 已保存到账户" : item.persisting ? " · 保存中" : ""}</small><span class="source-badge ${item.source === "实时录音" ? "live" : ""}">${sourceLabel}</span>${item.error ? `<small class="file-error">失败原因：${escapeHTML(item.error)}</small>` : ""}${item.persistError ? `<small class="file-error">保存提示：${escapeHTML(item.persistError)}</small>` : ""}</td>
+        <td><strong>${escapeHTML(item.id)} · ${escapeHTML(item.name)}</strong><small class="${fileSize > 24 * 1024 * 1024 && !item.text ? "large-file-note" : "file-size-note"}">${item.roleResult ? "已区分角色 · 可导出问答 Word" : item.text ? "已建立逐字稿" : fileSize > 24 * 1024 * 1024 ? `${formatFileSize(fileSize)} · 服务端提取音轨并自动分片` : `${formatFileSize(fileSize)} · 等待语音转录`}${item.persisted ? " · 已保存到账户" : item.localPersisted ? " · 已保存本机备份" : item.persisting ? " · 保存中" : ""}</small><span class="source-badge ${item.source === "实时录音" ? "live" : ""}">${sourceLabel}</span>${item.error ? `<small class="file-error">失败原因：${escapeHTML(item.error)}</small>` : ""}${item.persistError ? `<small class="file-error">保存提示：${escapeHTML(item.persistError)}</small>` : ""}${item.localPersistError ? `<small class="file-error">本机备份提示：${escapeHTML(item.localPersistError)}</small>` : ""}</td>
         <td><select class="type-select" data-index="${index}" aria-label="受访者类型"><option value="HCP" ${item.type === "HCP" ? "selected" : ""}>HCP</option><option value="患者" ${item.type === "患者" ? "selected" : ""}>患者</option></select></td>
         <td>${escapeHTML(item.duration)}</td>
         <td><span class="status-pill ${statusClass}">${escapeHTML(item.status)}</span>${item.progressText ? `<small class="transcript-progress">${escapeHTML(item.progressText)}</small>` : ""}</td>
@@ -908,6 +1045,7 @@ $("#clearFiles").addEventListener("click", async () => {
     try {
       await fetch(`${API_BASE}/api/library/items`, { method: "DELETE" });
     } catch {}
+    await clearLocalInterviews();
     state.interviews = [];
     state.matrix = [];
     state.report = null;
@@ -965,6 +1103,10 @@ async function initializeApp() {
   await checkPortalSession();
   await checkHealth();
   await loadInterviewLibrary();
+  try {
+    const savedView = localStorage.getItem(VIEW_STORAGE_KEY);
+    if (savedView && $(`#${savedView}-view`)) showView(savedView);
+  } catch {}
 }
 
 initializeApp();
