@@ -21,7 +21,7 @@ import {
 import { buildInsightDeck, buildInsightDocx, buildMatrixWorkbook, buildRoleTranscriptDocx } from "./lib/office-exporter.mjs";
 import { AuthStore } from "./lib/auth-store.mjs";
 import { PostgresAuthStore } from "./lib/postgres-auth-store.mjs";
-import { mailConfigured, sendAccessApprovedEmail } from "./lib/mailer.mjs";
+import { mailConfigured, mailProviderLabel, sendAccessApprovedEmail } from "./lib/mailer.mjs";
 
 const ROOT = join(process.cwd(), "public");
 const PORT = Number(process.env.PORT || 4174);
@@ -809,7 +809,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname.startsWith("/api/admin/")) return await handleAdmin(req, res, url.pathname);
     if (req.method === "GET" && url.pathname === "/api/health") {
-      return json(res, 200, { ok: true, apiConfigured: Boolean(API_KEY), apiKeySource: process.env.OPENAI_API_KEY ? "server" : API_KEY ? "temporary" : "none", authRequired: AUTH_REQUIRED, storage: process.env.DATABASE_URL ? "postgres" : "sqlite", emailConfigured: mailConfigured(), mapModel: MAP_MODEL, synthesisModel: SYNTHESIS_MODEL });
+      return json(res, 200, { ok: true, apiConfigured: Boolean(API_KEY), apiKeySource: process.env.OPENAI_API_KEY ? "server" : API_KEY ? "temporary" : "none", authRequired: AUTH_REQUIRED, storage: process.env.DATABASE_URL ? "postgres" : "sqlite", emailConfigured: mailConfigured(), emailProvider: mailProviderLabel(), mapModel: MAP_MODEL, synthesisModel: SYNTHESIS_MODEL });
     }
     if (url.pathname.startsWith("/api/")) {
       const apiUser = await requireUser(req, res);

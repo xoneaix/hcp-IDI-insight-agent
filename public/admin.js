@@ -34,7 +34,7 @@ function showDeliveryResult(data, actionText = "账号已开通") {
     return;
   }
   showCredential(data.email, data.temporaryPassword);
-  $("#adminMessage").textContent = `${actionText}，但邮件未发送成功：${data.emailError || "未知错误"}。请复制上方临时密码转发给同事，或稍后重置密码重试邮件发送。`;
+  $("#adminMessage").textContent = `${actionText}，但邮件未发送成功：${data.emailError || "未知错误"} 请复制上方临时密码转发给同事；待邮件服务激活后，可再次点击“重置密码”重新发送。`;
   $("#adminMessage").className = "message error";
 }
 
@@ -50,7 +50,7 @@ async function load() {
   const [usersData, requestsData, health] = await Promise.all([api("/api/admin/users"), api("/api/admin/requests"), api("/api/health")]);
   const persistent = health.storage === "postgres";
   const emailReady = health.emailConfigured === true;
-  $("#adminSystemStatus").textContent = `${persistent ? "✓ 历史账号已持久保存" : "⚠ 当前账号仍为临时存储"} · ${emailReady ? "✓ 审批邮件已启用" : "⚠ 审批邮件待配置"}`;
+  $("#adminSystemStatus").textContent = `${persistent ? "✓ 历史账号已持久保存" : "⚠ 当前账号仍为临时存储"} · ${emailReady ? `✓ 邮件参数已配置：${esc(health.emailProvider || "邮件服务")}` : "⚠ 审批邮件待配置"} · 实际发送以重置/审批结果为准`;
   $("#adminSystemStatus").className = `system-status ${persistent && emailReady ? "ready" : "warning"}`;
 
   $("#userRows").innerHTML = usersData.users.map((user) => `<tr><td>${esc(user.email)}</td><td>${user.role === "admin" ? "管理员" : "试用用户"}</td><td><span class="pill ${user.active ? "" : "off"}">${user.active ? "已启用" : "已停用"}</span></td><td>${user.must_change_password ? "待修改" : "已完成"}</td><td>${esc(displayTime(user.last_login_at))}</td><td><span class="row-actions"><button data-reset="${user.id}" data-email="${esc(user.email)}" data-role="${user.role}">重置密码</button><button data-toggle="${user.id}" data-active="${user.active}">${user.active ? "停用" : "启用"}</button></span></td></tr>`).join("") || '<tr><td class="empty" colspan="6">暂无用户</td></tr>';
