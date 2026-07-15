@@ -976,7 +976,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname.startsWith("/api/admin/")) return await handleAdmin(req, res, url.pathname);
     if (req.method === "GET" && url.pathname === "/api/health") {
-      return json(res, 200, { ok: true, apiConfigured: Boolean(API_KEY), apiKeySource: process.env.OPENAI_API_KEY ? "server" : API_KEY ? "temporary" : "none", authRequired: AUTH_REQUIRED, storage: process.env.DATABASE_URL ? "postgres" : "sqlite", emailConfigured: mailConfigured(), emailProvider: mailProviderLabel(), mapModel: MAP_MODEL, synthesisModel: SYNTHESIS_MODEL });
+      return json(res, 200, { ok: true, apiConfigured: Boolean(API_KEY), apiKeySource: process.env.OPENAI_API_KEY ? "server" : API_KEY ? "temporary" : "none", authRequired: AUTH_REQUIRED, storage: process.env.DATABASE_URL ? "postgres" : "sqlite", dataDir: DATA_DIR, libraryFileDir: LIBRARY_FILE_DIR, emailConfigured: mailConfigured(), emailProvider: mailProviderLabel(), mapModel: MAP_MODEL, synthesisModel: SYNTHESIS_MODEL });
     }
     if (url.pathname.startsWith("/api/")) {
       const apiUser = await requireUser(req, res);

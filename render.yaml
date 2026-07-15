@@ -6,6 +6,10 @@ services:
     region: singapore
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
+    disk:
+      name: medvoice-data
+      mountPath: /app/data
+      sizeGB: 10
     autoDeployTrigger: commit
     envVars:
       - key: AUTH_REQUIRED
