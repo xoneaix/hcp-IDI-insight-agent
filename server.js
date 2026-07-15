@@ -595,7 +595,8 @@ async function handleTranscribe(req, res) {
   const file = parts.find((part) => part.filename);
   if (!file) throw new Error("没有收到可转录的音视频文件");
   if (file.data.length > DIRECT_AUDIO_LIMIT) throw new Error("该文件超过安全直传大小，请使用大型文件自动分片转录");
-  const result = await transcribeAudioBytes(file.data, file.filename, file.headers.match(/content-type:\s*([^\r\n]+)/i)?.[1] || "application/octet-stream");
+  const durationPart = parts.find((part) => part.name === "durationSeconds");
+  const result = await transcribeUploadedMedia(file.data, file.filename, file.headers.match(/content-type:\s*([^\r\n]+)/i)?.[1] || "application/octet-stream", durationPart?.data?.toString("utf8"));
   json(res, 200, result);
 }
 
@@ -640,7 +641,15 @@ async function mediaDurationSeconds(path, fallbackDuration) {
 }
 
 async function extractAudioChunk(sourcePath, chunkPath, start, duration) {
-  if (process.platform === "darwin") {
+  const ffmpegArgs = [
+    "-hide_banner", "-loglevel", "error", "-y",
+    "-ss", String(start), "-t", String(duration),
+    "-i", sourcePath, "-vn", "-c:a", "aac", "-b:a", "96k", chunkPath
+  ];
+  try {
+    return await execFileAsync(process.env.FFMPEG_BIN || "ffmpeg", ffmpegArgs, { timeout: 20 * 60 * 1000, maxBuffer: 2_000_000 });
+  } catch (error) {
+    if (process.platform !== "darwin") throw error;
     return execFileAsync("/usr/bin/avconvert", [
       "--source", sourcePath,
       "--preset", "PresetAppleM4A",
@@ -650,10 +659,12 @@ async function extractAudioChunk(sourcePath, chunkPath, start, duration) {
       "--duration", String(duration)
     ], { timeout: 20 * 60 * 1000, maxBuffer: 2_000_000 });
   }
+}
+
+async function convertMediaToM4a(sourcePath, outputPath) {
   return execFileAsync(process.env.FFMPEG_BIN || "ffmpeg", [
     "-hide_banner", "-loglevel", "error", "-y",
-    "-ss", String(start), "-t", String(duration),
-    "-i", sourcePath, "-vn", "-c:a", "aac", "-b:a", "96k", chunkPath
+    "-i", sourcePath, "-vn", "-c:a", "aac", "-b:a", "96k", outputPath
   ], { timeout: 20 * 60 * 1000, maxBuffer: 2_000_000 });
 }
 
@@ -715,6 +726,29 @@ async function transcribeAudioBytes(bytes, filename, mimeType = "audio/mp4") {
       segments: (fallback.segments || []).map((segment) => ({ ...segment, speaker: "待语义识别" })),
       transcription_mode: "whisper-fallback"
     };
+  }
+}
+
+async function transcribeUploadedMedia(bytes, filename, mimeType = "application/octet-stream", fallbackDuration) {
+  const jobId = randomUUID();
+  const sourcePath = join(JOB_DIR, `medvoice-direct-source-${jobId}${safeUploadSuffix(filename)}`);
+  const audioPath = join(JOB_DIR, `medvoice-direct-audio-${jobId}.m4a`);
+  try {
+    await writeFile(sourcePath, bytes);
+    try {
+      await convertMediaToM4a(sourcePath, audioPath);
+    } catch (conversionError) {
+      const directSupported = /\.(mp3|mp4|mpeg|mpga|m4a|wav|webm)$/i.test(filename || "") || /^audio\//i.test(mimeType) || /^video\//i.test(mimeType);
+      if (!directSupported) throw conversionError;
+      const result = await transcribeAudioBytes(bytes, filename, mimeType);
+      return { ...result, preprocessed: false };
+    }
+    const audioBytes = await readFile(audioPath);
+    const duration = await mediaDurationSeconds(audioPath, fallbackDuration).catch(() => Number(fallbackDuration) || undefined);
+    const result = await transcribeAudioBytes(audioBytes, "interview-audio.m4a", "audio/mp4");
+    return Number.isFinite(duration) && duration > 0 ? { ...result, duration, preprocessed: true } : { ...result, preprocessed: true };
+  } finally {
+    await Promise.all([sourcePath, audioPath].map((path) => unlink(path).catch(() => {})));
   }
 }
 

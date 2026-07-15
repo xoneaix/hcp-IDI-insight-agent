@@ -251,6 +251,7 @@ async function transcribeInterview(index) {
     } else {
       const form = new FormData();
       form.append("file", item.file);
+      if (Number.isFinite(item.durationSeconds)) form.append("durationSeconds", String(item.durationSeconds));
       form.append("model", "gpt-4o-transcribe-diarize");
       form.append("response_format", "diarized_json");
       form.append("chunking_strategy", "auto");
