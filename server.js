@@ -1,7 +1,7 @@
 import http from "node:http";
-import { createWriteStream } from "node:fs";
-import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { extname, join, normalize, sep } from "node:path";
+import { createReadStream, createWriteStream } from "node:fs";
+import { access, mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { dirname, extname, join, normalize, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -21,6 +21,7 @@ import {
 import { buildInsightDeck, buildInsightDocx, buildMatrixWorkbook, buildRoleTranscriptDocx } from "./lib/office-exporter.mjs";
 import { AuthStore } from "./lib/auth-store.mjs";
 import { PostgresAuthStore } from "./lib/postgres-auth-store.mjs";
+import { PostgresInterviewLibraryStore, SqliteInterviewLibraryStore } from "./lib/interview-library-store.mjs";
 import { mailConfigured, mailProviderLabel, sendAccessApprovedEmail } from "./lib/mailer.mjs";
 
 const ROOT = join(process.cwd(), "public");
@@ -31,6 +32,7 @@ const MAX_CONCURRENCY = Number(process.env.MAX_CONCURRENCY || 4);
 const AUTH_REQUIRED = process.env.AUTH_REQUIRED === "true";
 const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), "data");
 const JOB_DIR = process.env.JOB_DIR || join(DATA_DIR, "jobs");
+const LIBRARY_FILE_DIR = process.env.LIBRARY_FILE_DIR || join(DATA_DIR, "interview-library");
 const HOST = process.env.HOST || (process.env.RENDER ? "0.0.0.0" : "127.0.0.1");
 let API_KEY = process.env.OPENAI_API_KEY || "";
 const execFileAsync = promisify(execFile);
@@ -38,9 +40,13 @@ const DIRECT_AUDIO_LIMIT = 24 * 1024 * 1024;
 const LARGE_UPLOAD_LIMIT = 2 * 1024 * 1024 * 1024;
 const AUDIO_CHUNK_SECONDS = 10 * 60;
 await mkdir(JOB_DIR, { recursive: true });
+await mkdir(LIBRARY_FILE_DIR, { recursive: true });
 const authStore = process.env.DATABASE_URL
   ? await PostgresAuthStore.create(process.env.DATABASE_URL)
   : await AuthStore.create(join(DATA_DIR, "medvoice.sqlite"));
+const libraryStore = process.env.DATABASE_URL
+  ? await PostgresInterviewLibraryStore.create(process.env.DATABASE_URL)
+  : await SqliteInterviewLibraryStore.create(join(DATA_DIR, "interview-library.sqlite"));
 if (AUTH_REQUIRED) {
   if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) throw new Error("在线权限模式需要配置 ADMIN_EMAIL 和 ADMIN_PASSWORD");
   await authStore.ensureAdmin(process.env.ADMIN_EMAIL, process.env.ADMIN_PASSWORD);
@@ -606,6 +612,7 @@ function safeUploadSuffix(filename) {
 }
 
 async function streamUploadToFile(req, path) {
+  await mkdir(dirname(path), { recursive: true });
   let size = 0;
   const limiter = new Transform({
     transform(chunk, encoding, callback) {
@@ -615,6 +622,24 @@ async function streamUploadToFile(req, path) {
   });
   await pipeline(req, limiter, createWriteStream(path, { flags: "wx" }));
   return size;
+}
+
+function decodeMetadataHeader(req) {
+  const raw = String(req.headers["x-medvoice-meta"] || "");
+  if (!raw) return {};
+  try {
+    return JSON.parse(decodeURIComponent(raw));
+  } catch {
+    throw new Error("资料元数据格式错误，请重新上传");
+  }
+}
+
+function libraryFilePath(userId, id, filename) {
+  return join(LIBRARY_FILE_DIR, String(userId), `${id}${safeUploadSuffix(filename)}`);
+}
+
+async function removeStoredFiles(paths) {
+  await Promise.all((paths || []).map((path) => path ? unlink(path).catch(() => {}) : Promise.resolve()));
 }
 
 async function mediaDurationSeconds(path, fallbackDuration) {
@@ -771,18 +796,11 @@ async function transcribeAudioFile(path, filename) {
   return transcribeAudioBytes(await readFile(path), filename, "audio/mp4");
 }
 
-async function handleLargeTranscribe(req, res) {
-  if (!API_KEY) return json(res, 503, { error: "尚未连接 AI 服务；请先完成临时 API Key 配置。" });
-  let originalName = "interview.mp4";
-  try {
-    originalName = decodeURIComponent(String(req.headers["x-filename"] || originalName));
-  } catch {}
+async function transcribeLargeMediaFile(sourcePath, fallbackDuration) {
   const jobId = randomUUID();
-  const sourcePath = join(JOB_DIR, `medvoice-source-${jobId}${safeUploadSuffix(originalName)}`);
   const chunkPaths = [];
   try {
-    await streamUploadToFile(req, sourcePath);
-    const duration = await mediaDurationSeconds(sourcePath, req.headers["x-media-duration"]);
+    const duration = await mediaDurationSeconds(sourcePath, fallbackDuration);
     const chunkCount = Math.ceil(duration / AUDIO_CHUNK_SECONDS);
     const results = [];
     for (let index = 0; index < chunkCount; index += 1) {
@@ -804,17 +822,99 @@ async function handleLargeTranscribe(req, res) {
       await unlink(chunkPath).catch(() => {});
     }
     const segments = results.flatMap((result) => result.segments);
-    return json(res, 200, {
+    return {
       text: results.map((result) => result.text).filter(Boolean).join("\n"),
       segments,
       duration,
       chunks: chunkCount,
       preprocessed: true,
       transcription_mode: results.some((result) => result.mode === "whisper-fallback") ? "whisper-fallback" : "speaker-diarization"
-    });
+    };
   } finally {
-    await Promise.all([sourcePath, ...chunkPaths].map((path) => unlink(path).catch(() => {})));
+    await Promise.all(chunkPaths.map((path) => unlink(path).catch(() => {})));
   }
+}
+
+async function handleLargeTranscribe(req, res) {
+  if (!API_KEY) return json(res, 503, { error: "尚未连接 AI 服务；请先完成临时 API Key 配置。" });
+  let originalName = "interview.mp4";
+  try {
+    originalName = decodeURIComponent(String(req.headers["x-filename"] || originalName));
+  } catch {}
+  const jobId = randomUUID();
+  const sourcePath = join(JOB_DIR, `medvoice-source-${jobId}${safeUploadSuffix(originalName)}`);
+  try {
+    await streamUploadToFile(req, sourcePath);
+    return json(res, 200, await transcribeLargeMediaFile(sourcePath, req.headers["x-media-duration"]));
+  } finally {
+    await unlink(sourcePath).catch(() => {});
+  }
+}
+
+async function transcribeStoredLibraryItem(userId, id) {
+  if (!API_KEY) throw new Error("尚未连接 AI 服务；请先完成 AI 服务配置。");
+  const item = await libraryStore.getItem(userId, id);
+  if (!item?.storagePath) throw new Error("没有找到该账号下的访谈原始文件");
+  const fileInfo = await stat(item.storagePath).catch(() => null);
+  if (!fileInfo?.isFile()) throw new Error("原始访谈文件已不在服务端，请重新上传");
+  if (fileInfo.size > DIRECT_AUDIO_LIMIT) return transcribeLargeMediaFile(item.storagePath, item.durationSeconds);
+  const bytes = await readFile(item.storagePath);
+  return transcribeUploadedMedia(bytes, item.fileName || item.name, item.mimeType, item.durationSeconds);
+}
+
+async function handleLibrary(req, res, pathname) {
+  const user = req.user;
+  if (req.method === "GET" && pathname === "/api/library/items") {
+    return json(res, 200, { items: await libraryStore.listItems(user.id) });
+  }
+  if (req.method === "POST" && pathname === "/api/library/items") {
+    const meta = decodeMetadataHeader(req);
+    const id = randomUUID();
+    const fileName = String(meta.name || "interview.bin").slice(0, 240);
+    const storagePath = libraryFilePath(user.id, id, fileName);
+    const size = await streamUploadToFile(req, storagePath);
+    const item = await libraryStore.createItem(user.id, id, meta, {
+      fileName,
+      mimeType: String(req.headers["content-type"] || meta.mimeType || "application/octet-stream").slice(0, 160),
+      fileSize: size,
+      storagePath
+    });
+    return json(res, 200, { item });
+  }
+  const itemMatch = pathname.match(/^\/api\/library\/items\/([^/]+)$/);
+  if (itemMatch && req.method === "PATCH") {
+    const patch = await readJson(req, 2_000_000);
+    const item = await libraryStore.updateItem(user.id, itemMatch[1], patch);
+    if (!item) return json(res, 404, { error: "资料不存在或无权访问" });
+    return json(res, 200, { item });
+  }
+  if (itemMatch && req.method === "DELETE") {
+    await removeStoredFiles(await libraryStore.deleteItem(user.id, itemMatch[1]));
+    return json(res, 200, { deleted: true });
+  }
+  if (itemMatch && req.method === "GET") {
+    const item = await libraryStore.getItem(user.id, itemMatch[1]);
+    if (!item?.storagePath) return json(res, 404, { error: "资料不存在或无权访问" });
+    const info = await stat(item.storagePath).catch(() => null);
+    if (!info?.isFile()) return json(res, 404, { error: "原始访谈文件已不在服务端，请重新上传" });
+    res.writeHead(200, {
+      "Content-Type": item.mimeType || "application/octet-stream",
+      "Content-Length": info.size,
+      "Content-Disposition": `attachment; filename="${encodeURIComponent(item.fileName || item.name)}"`,
+      "Cache-Control": "no-store"
+    });
+    return createReadStream(item.storagePath).pipe(res);
+  }
+  const transcribeMatch = pathname.match(/^\/api\/library\/items\/([^/]+)\/transcribe$/);
+  if (transcribeMatch && req.method === "POST") {
+    const result = await transcribeStoredLibraryItem(user.id, transcribeMatch[1]);
+    return json(res, 200, result);
+  }
+  if (req.method === "DELETE" && pathname === "/api/library/items") {
+    await removeStoredFiles(await libraryStore.deleteAll(user.id));
+    return json(res, 200, { deleted: true });
+  }
+  return json(res, 404, { error: "资料库接口不存在" });
 }
 
 async function handleSettings(req, res) {
@@ -888,6 +988,7 @@ const server = http.createServer(async (req, res) => {
       if (AUTH_REQUIRED && req.user.role !== "admin") return json(res, 403, { error: "仅管理员可以配置临时 API Key" });
       return await handleSettings(req, res);
     }
+    if (url.pathname.startsWith("/api/library/")) return await handleLibrary(req, res, url.pathname);
     if (req.method === "POST" && url.pathname === "/api/transcribe") return await handleTranscribe(req, res);
     if (req.method === "POST" && url.pathname === "/api/transcribe-large") return await handleLargeTranscribe(req, res);
     if (req.method === "POST" && url.pathname === "/api/outline/parse") return await handleOutlineParse(req, res);

@@ -12,6 +12,7 @@ const state = {
   authRequired: false,
   currentUser: null,
   pendingAfterConnect: null,
+  libraryLoaded: false,
   roleProcessing: false,
   recording: null,
   currentQuote: null
@@ -143,6 +144,108 @@ function formatFileSize(bytes) {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+function interviewPayload(item) {
+  return {
+    clientId: item.id,
+    name: item.name,
+    type: item.type,
+    source: item.source,
+    recordedAt: item.recordedAt || "",
+    durationSeconds: item.durationSeconds,
+    status: item.status,
+    progressText: item.progressText || "",
+    error: item.error || "",
+    text: item.text || "",
+    draftText: item.draftText || "",
+    roleResult: item.roleResult || null
+  };
+}
+
+function applyPersistedItem(local, persisted) {
+  local.serverId = persisted.serverId;
+  local.persisted = true;
+  local.hasFile = persisted.hasFile;
+  local.fileName = persisted.fileName || local.name;
+  local.fileSize = persisted.fileSize || local.file?.size || 0;
+  local.mimeType = persisted.mimeType || local.file?.type || "application/octet-stream";
+  return local;
+}
+
+async function persistInterview(index) {
+  const item = state.interviews[index];
+  if (!item || item.persisting) return;
+  try {
+    item.persisting = true;
+    let response;
+    if (item.serverId) {
+      response = await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(interviewPayload(item))
+      });
+    } else if (item.file) {
+      response = await fetch(`${API_BASE}/api/library/items`, {
+        method: "POST",
+        headers: {
+          "Content-Type": item.file.type || "application/octet-stream",
+          "X-MedVoice-Meta": encodeURIComponent(JSON.stringify(interviewPayload(item)))
+        },
+        body: item.file
+      });
+    } else {
+      return;
+    }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "资料保存失败");
+    if (data.item) applyPersistedItem(item, data.item);
+  } catch (error) {
+    item.persistError = error.message;
+    toast(`资料未能保存到账户：${error.message}`, 6000);
+  } finally {
+    item.persisting = false;
+  }
+}
+
+async function persistAllInterviews() {
+  await Promise.all(state.interviews.map((_, index) => persistInterview(index)));
+}
+
+async function loadInterviewLibrary() {
+  try {
+    const response = await fetch(`${API_BASE}/api/library/items`, { cache: "no-store" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "资料库加载失败");
+    state.interviews = (data.items || []).map((item) => ({
+      id: item.id,
+      serverId: item.serverId,
+      name: item.name,
+      type: item.type,
+      duration: item.duration,
+      durationSeconds: item.durationSeconds,
+      status: item.status,
+      progressText: item.progressText || "",
+      error: item.error || "",
+      text: item.text || "",
+      draftText: item.draftText || "",
+      roleResult: item.roleResult || null,
+      file: null,
+      fileName: item.fileName,
+      fileSize: item.fileSize,
+      mimeType: item.mimeType,
+      hasFile: item.hasFile,
+      source: item.source || "上传文件",
+      recordedAt: item.recordedAt || "",
+      persisted: true,
+      selected: true
+    }));
+    state.libraryLoaded = true;
+    renderAll();
+    if (state.interviews.length) toast(`已恢复 ${state.interviews.length} 份账号资料`);
+  } catch (error) {
+    toast(`账号资料加载失败：${error.message}`, 6000);
+  }
+}
+
 function humanizeTranscriptionError(message = "") {
   if (/quota|billing|insufficient_quota|429/i.test(message)) {
     return "OpenAI API 额度不足或账单未开通，当前无法完成真实 AI 转录。请到 OpenAI Platform 的 Billing / Usage 检查余额、月度限额或更换有额度的 API Key；额度恢复后可点击“重新转录”。";
@@ -197,6 +300,10 @@ async function addFiles(files, options = {}) {
       status: isText ? "可分析" : options.source === "实时录音" ? "录音已保存" : "待转录",
       text,
       file,
+      fileName: file.name,
+      fileSize: file.size,
+      mimeType: file.type || "application/octet-stream",
+      hasFile: true,
       source: options.source || "上传文件",
       recordedAt: options.recordedAt || "",
       draftText: options.draftText || "",
@@ -205,6 +312,7 @@ async function addFiles(files, options = {}) {
     });
     added += 1;
     addedIndexes.push(index);
+    await persistInterview(index);
   }
   renderAll();
   toast(added ? `已导入 ${added} 份访谈资料` : "没有找到支持的文件格式");
@@ -217,13 +325,14 @@ function renderTranscripts() {
     table.innerHTML = '<tr><td colspan="6" class="empty-row">尚未导入资料。可上传文件或使用“实时录音”。</td></tr>';
   } else {
     table.innerHTML = state.interviews.map((item, index) => {
-      const isMedia = item.file && !/\.(txt|md|csv|json)$/i.test(item.name);
+      const isMedia = (item.file || item.hasFile) && !/\.(txt|md|csv|json)$/i.test(item.name);
       const actionLabel = isMedia ? (item.text ? "重新转录" : item.status === "转录失败" ? "重试" : "转录") : "无需转录";
       const statusClass = item.status.includes("中") ? "processing" : item.status === "转录失败" ? "failed" : item.status === "录音已保存" ? "saved" : "";
       const sourceLabel = item.source === "实时录音" ? `实时录音${item.recordedAt ? ` · ${escapeHTML(item.recordedAt)}` : ""}` : "上传文件";
+      const fileSize = item.file?.size || item.fileSize || 0;
       return `<tr>
         <td><input class="row-check" type="checkbox" data-index="${index}" ${item.selected ? "checked" : ""} aria-label="选择 ${escapeHTML(item.id)}" /></td>
-        <td><strong>${escapeHTML(item.id)} · ${escapeHTML(item.name)}</strong><small class="${item.file?.size > 24 * 1024 * 1024 && !item.text ? "large-file-note" : "file-size-note"}">${item.roleResult ? "已区分角色 · 可导出问答 Word" : item.text ? "已建立逐字稿" : item.file?.size > 24 * 1024 * 1024 ? `${formatFileSize(item.file.size)} · 将本地提取音轨并自动分片` : `${formatFileSize(item.file?.size)} · 等待语音转录`}</small><span class="source-badge ${item.source === "实时录音" ? "live" : ""}">${sourceLabel}</span>${item.error ? `<small class="file-error">失败原因：${escapeHTML(item.error)}</small>` : ""}</td>
+        <td><strong>${escapeHTML(item.id)} · ${escapeHTML(item.name)}</strong><small class="${fileSize > 24 * 1024 * 1024 && !item.text ? "large-file-note" : "file-size-note"}">${item.roleResult ? "已区分角色 · 可导出问答 Word" : item.text ? "已建立逐字稿" : fileSize > 24 * 1024 * 1024 ? `${formatFileSize(fileSize)} · 服务端提取音轨并自动分片` : `${formatFileSize(fileSize)} · 等待语音转录`}${item.persisted ? " · 已保存到账户" : item.persisting ? " · 保存中" : ""}</small><span class="source-badge ${item.source === "实时录音" ? "live" : ""}">${sourceLabel}</span>${item.error ? `<small class="file-error">失败原因：${escapeHTML(item.error)}</small>` : ""}${item.persistError ? `<small class="file-error">保存提示：${escapeHTML(item.persistError)}</small>` : ""}</td>
         <td><select class="type-select" data-index="${index}" aria-label="受访者类型"><option value="HCP" ${item.type === "HCP" ? "selected" : ""}>HCP</option><option value="患者" ${item.type === "患者" ? "selected" : ""}>患者</option></select></td>
         <td>${escapeHTML(item.duration)}</td>
         <td><span class="status-pill ${statusClass}">${escapeHTML(item.status)}</span>${item.progressText ? `<small class="transcript-progress">${escapeHTML(item.progressText)}</small>` : ""}</td>
@@ -236,7 +345,7 @@ function renderTranscripts() {
   $("#navCount").textContent = state.interviews.length;
   $("#masterCheck").checked = state.interviews.length > 0 && state.interviews.every((item) => item.selected);
   $$(".row-check").forEach((checkbox) => checkbox.addEventListener("change", () => { state.interviews[+checkbox.dataset.index].selected = checkbox.checked; renderReadiness(); renderRoleMapper(); }));
-  $$(".type-select").forEach((select) => select.addEventListener("change", () => { const item = state.interviews[+select.dataset.index]; item.type = select.value; item.roleResult = null; renderAll(); }));
+  $$(".type-select").forEach((select) => select.addEventListener("change", async () => { const item = state.interviews[+select.dataset.index]; item.type = select.value; item.roleResult = null; renderAll(); await persistInterview(+select.dataset.index); }));
   $$(".transcribe-button").forEach((button) => button.addEventListener("click", () => transcribeInterview(+button.dataset.index)));
 }
 
@@ -245,14 +354,17 @@ async function transcribeInterview(index) {
   const health = await checkHealth();
   if (!health) return toast("请先启动 MedVoice 本地服务");
   if (!state.apiConfigured) return openApiSettings(() => transcribeInterview(index));
-  const isLarge = item.file.size > 24 * 1024 * 1024;
+  const fileSize = item.file?.size || item.fileSize || 0;
+  const isLarge = fileSize > 24 * 1024 * 1024;
   item.error = "";
   item.progressText = isLarge ? "正在上传至本机并提取音轨，请勿关闭页面" : "正在发送音频并识别说话人";
   item.status = isLarge ? "大型文件处理中" : "转录中";
   renderTranscripts();
   try {
     let response;
-    if (isLarge) {
+    if (!item.file && item.serverId) {
+      response = await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}/transcribe`, { method: "POST" });
+    } else if (isLarge) {
       response = await fetch(`${API_BASE}/api/transcribe-large`, {
         method: "POST",
         headers: {
@@ -278,6 +390,7 @@ async function transcribeInterview(index) {
     item.status = "已转录";
     item.progressText = data.transcription_mode === "whisper-fallback" ? "已使用兼容转录模式，建议复核说话人角色" : "说话人分段已建立";
     if (data.duration) item.duration = formatDuration(data.duration);
+    if (data.duration) item.durationSeconds = data.duration;
     toast(`${item.id} 转录完成${data.chunks ? `（${data.chunks} 个音频分片）` : ""}`);
   } catch (error) {
     const friendlyError = humanizeTranscriptionError(error.message);
@@ -296,6 +409,7 @@ async function transcribeInterview(index) {
       toast(`转录失败：${item.error}`, 8000);
     }
   }
+  await persistInterview(index);
   renderAll();
 }
 
@@ -347,6 +461,7 @@ async function identifySelectedRoles() {
       const item = state.interviews.find((interview) => interview.id === result.document_id);
       if (item) item.roleResult = result;
     }
+    await persistAllInterviews();
     toast(`已完成 ${data.results?.length || 0} 份访谈的角色区分`);
   } catch (error) {
     toast(error.message);
@@ -788,7 +903,18 @@ $("#fileInput").addEventListener("change", (event) => addFiles([...event.target.
 $("#uploadZone").addEventListener("drop", (event) => addFiles([...event.dataTransfer.files]));
 $("#selectAll").addEventListener("click", () => { state.interviews.forEach((item) => { item.selected = true; }); renderAll(); });
 $("#masterCheck").addEventListener("change", (event) => { state.interviews.forEach((item) => { item.selected = event.target.checked; }); renderAll(); });
-$("#clearFiles").addEventListener("click", () => { if (!state.interviews.length || confirm("确定清空当前会话中的全部访谈资料吗？")) { state.interviews = []; state.matrix = []; state.report = null; state.analyses = []; renderAll(); } });
+$("#clearFiles").addEventListener("click", async () => {
+  if (!state.interviews.length || confirm("确定清空当前账号中的全部访谈资料吗？此操作会同步删除服务端保存的原始文件。")) {
+    try {
+      await fetch(`${API_BASE}/api/library/items`, { method: "DELETE" });
+    } catch {}
+    state.interviews = [];
+    state.matrix = [];
+    state.report = null;
+    state.analyses = [];
+    renderAll();
+  }
+});
 $("#recordButton").addEventListener("click", (event) => { event.stopPropagation(); $("#recordingConsole").hidden = !$("#recordingConsole").hidden; });
 $("#startRecording").addEventListener("click", startRecording);
 $("#pauseRecording").addEventListener("click", pauseRecording);
@@ -834,6 +960,11 @@ $("#projectButton").addEventListener("click", () => {
   }
 });
 
-renderAll();
-checkPortalSession();
-checkHealth();
+async function initializeApp() {
+  renderAll();
+  await checkPortalSession();
+  await checkHealth();
+  await loadInterviewLibrary();
+}
+
+initializeApp();
