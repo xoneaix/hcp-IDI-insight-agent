@@ -2,7 +2,7 @@ services:
   - type: web
     name: medvoice-insight-agent
     runtime: docker
-    plan: free
+    plan: standard
     region: singapore
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health

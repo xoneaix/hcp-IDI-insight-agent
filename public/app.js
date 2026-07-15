@@ -34,11 +34,23 @@ function toast(message, duration = 2600) {
   toast.timer = setTimeout(() => element.classList.remove("show"), duration);
 }
 
-function showView(view) {
+function validView(view) {
+  return ["overview", "transcripts", "outline", "matrix", "report"].includes(view) ? view : "overview";
+}
+
+function savedView() {
+  const fromHash = validView(location.hash.replace(/^#/, ""));
+  if (fromHash !== "overview" || location.hash === "#overview") return fromHash;
+  try { return validView(localStorage.getItem(VIEW_STORAGE_KEY)); } catch { return "overview"; }
+}
+
+function showView(view, options = {}) {
+  view = validView(view);
   $$(".view").forEach((element) => element.classList.toggle("active", element.id === `${view}-view`));
   $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   try { localStorage.setItem(VIEW_STORAGE_KEY, view); } catch {}
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (options.updateHash !== false && location.hash !== `#${view}`) history.replaceState(null, "", `#${view}`);
+  if (options.scroll !== false) window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 async function checkHealth() {
@@ -1097,16 +1109,15 @@ $("#projectButton").addEventListener("click", () => {
     renderReport();
   }
 });
+window.addEventListener("hashchange", () => showView(savedView(), { updateHash: false }));
 
 async function initializeApp() {
+  showView(savedView(), { updateHash: location.hash.length > 1, scroll: false });
   renderAll();
   await checkPortalSession();
   await checkHealth();
   await loadInterviewLibrary();
-  try {
-    const savedView = localStorage.getItem(VIEW_STORAGE_KEY);
-    if (savedView && $(`#${savedView}-view`)) showView(savedView);
-  } catch {}
+  showView(savedView(), { updateHash: location.hash.length > 1, scroll: false });
 }
 
 initializeApp();
