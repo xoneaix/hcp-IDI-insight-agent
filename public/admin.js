@@ -124,8 +124,9 @@ $("#sendTestEmail").onclick = async () => {
   const originalText = button.textContent;
   button.textContent = "发送中…";
   try {
-    const data = await api("/api/admin/test-email", { method: "POST" });
-    $("#adminMessage").textContent = `测试邮件已通过 ${data.provider || "邮件服务"} 发送至 ${data.email}。Delivery ID：${data.deliveryId || "已提交"}`;
+    const target = $("#testEmailTarget").value.trim();
+    const data = await api("/api/admin/test-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: target }) });
+    $("#adminMessage").textContent = `测试邮件已通过 ${data.provider || "邮件服务"} 提交至 ${data.email}。发件人：${data.from || "已配置发件人"}。Delivery ID：${data.deliveryId || "已提交"}。如果未收到，请检查垃圾邮件、企业邮箱隔离区，或在 Brevo Transactional logs 中搜索该邮箱。`;
     $("#adminMessage").className = "message success";
   } catch (error) {
     $("#adminMessage").textContent = `测试邮件发送失败：${error.message}`;

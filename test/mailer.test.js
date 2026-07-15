@@ -20,6 +20,7 @@ test("approval mail uses HTTPS provider without exposing credentials in logs", a
     const payload = JSON.parse(request.options.body);
     assert.equal(payload.to[0].email, "colleague@hisunpharm.com");
     assert.match(payload.htmlContent, /Temp-Password!/);
+    assert.match(payload.textContent, /Temp-Password!/);
   } finally {
     global.fetch = previous.fetch;
     if (previous.key === undefined) delete process.env.BREVO_API_KEY; else process.env.BREVO_API_KEY = previous.key;
@@ -46,6 +47,7 @@ test("delivery test mail uses same HTTPS provider without creating credentials",
     assert.equal(payload.to[0].email, "admin@hisunpharm.com");
     assert.match(payload.subject, /邮件链路测试/);
     assert.equal(payload.htmlContent.includes("临时密码：</strong><code"), false);
+    assert.match(payload.textContent, /邮件链路测试成功/);
   } finally {
     global.fetch = previous.fetch;
     if (previous.key === undefined) delete process.env.BREVO_API_KEY; else process.env.BREVO_API_KEY = previous.key;

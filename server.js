@@ -464,8 +464,11 @@ async function handleAdmin(req, res, pathname) {
   if (pathname === "/api/admin/users" && req.method === "GET") return json(res, 200, { users: await authStore.listUsers() });
   if (pathname === "/api/admin/test-email" && req.method === "POST") {
     if (!mailConfigured()) throw new Error("邮件服务尚未配置：请先设置 BREVO_API_KEY 与 MAIL_FROM_EMAIL");
-    const delivery = await sendMailDeliveryTestEmail({ email: admin.email });
-    return json(res, 200, { emailed: true, email: admin.email, deliveryId: delivery.id, provider: delivery.provider });
+    const payload = await readJson(req, 100_000).catch(() => ({}));
+    const targetEmail = String(payload.email || admin.email).trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) throw new Error("请输入有效的测试收件邮箱");
+    const delivery = await sendMailDeliveryTestEmail({ email: targetEmail });
+    return json(res, 200, { emailed: true, email: targetEmail, deliveryId: delivery.id, provider: delivery.provider, from: process.env.MAIL_FROM_EMAIL || process.env.MAIL_FROM || "" });
   }
   if (pathname === "/api/admin/users" && req.method === "POST") {
     const payload = await readJson(req, 100_000);

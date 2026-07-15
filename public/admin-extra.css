@@ -32,6 +32,20 @@
   margin-top: 6px;
 }
 .system-row .system-status { margin: 0; }
+.test-email-input {
+  width: min(260px, 100%);
+  border: 1px solid #d8e1dc;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  padding: 8px 10px;
+  font-size: 10px;
+  outline: none;
+}
+.test-email-input:focus {
+  border-color: var(--green2);
+  box-shadow: 0 0 0 3px rgba(63,128,108,.08);
+}
 .system-status { color: var(--muted); font-size: 10px; }
 .system-status.ready { color: var(--green2); }
 .system-status.warning { color: #a36b20; }
