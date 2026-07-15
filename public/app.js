@@ -621,9 +621,7 @@ async function startRecording() {
     recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
     recorder.onstop = async () => {
       const session = state.recording;
-      const stoppedAt = Date.now();
-      const finalPausedMs = session?.pauseStarted && session?.stoppedWhilePaused ? stoppedAt - session.pauseStarted : 0;
-      const durationSeconds = Math.max(1, (stoppedAt - (session?.startedAt || stoppedAt) - (session?.pausedAt || 0) - finalPausedMs) / 1000);
+      const durationSeconds = Math.max(1, getRecordingElapsedSeconds(session));
       const extension = recorder.mimeType.includes("mp4") ? "m4a" : "webm";
       const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -636,6 +634,7 @@ async function startRecording() {
       $("#recordingStatus").textContent = "录音已保存";
       $("#startRecording").disabled = false;
       $("#pauseRecording").disabled = true;
+      $("#pauseRecording").textContent = "暂停";
       $("#stopRecording").disabled = true;
       const [newIndex] = await addFiles([file], {
         source: "实时录音",
@@ -651,11 +650,13 @@ async function startRecording() {
       }
     };
     recorder.start(1000);
-    state.recording = { recorder, stream, startedAt: Date.now(), pausedAt: 0, timer: setInterval(updateRecordingTime, 500) };
+    state.recording = { recorder, stream, startedAt: Date.now(), pausedAt: 0, pauseStarted: null, timer: setInterval(updateRecordingTime, 500) };
     $("#recordingConsole").classList.add("active");
     $("#recordingStatus").textContent = "正在录音";
+    $("#recordingTime").textContent = "00:00";
     $("#startRecording").disabled = true;
     $("#pauseRecording").disabled = false;
+    $("#pauseRecording").textContent = "暂停";
     $("#stopRecording").disabled = false;
     $("#liveTranscript").textContent = "正在聆听…";
     startSpeechPreview();
@@ -664,9 +665,15 @@ async function startRecording() {
   }
 }
 
+function getRecordingElapsedSeconds(session, now = Date.now()) {
+  if (!session?.startedAt) return 0;
+  const activePausedMs = session.pauseStarted ? now - session.pauseStarted : 0;
+  return Math.max(0, (now - session.startedAt - session.pausedAt - activePausedMs) / 1000);
+}
+
 function updateRecordingTime() {
   if (!state.recording) return;
-  const seconds = (Date.now() - state.recording.startedAt - state.recording.pausedAt) / 1000;
+  const seconds = getRecordingElapsedSeconds(state.recording);
   $("#recordingTime").textContent = formatDuration(seconds);
 }
 
@@ -676,11 +683,14 @@ function pauseRecording() {
   if (current.recorder.state === "recording") {
     current.recorder.pause();
     current.pauseStarted = Date.now();
+    updateRecordingTime();
     $("#pauseRecording").textContent = "继续";
     $("#recordingStatus").textContent = "录音已暂停";
   } else if (current.recorder.state === "paused") {
     current.pausedAt += Date.now() - current.pauseStarted;
+    current.pauseStarted = null;
     current.recorder.resume();
+    updateRecordingTime();
     $("#pauseRecording").textContent = "暂停";
     $("#recordingStatus").textContent = "正在录音";
   }
@@ -688,7 +698,6 @@ function pauseRecording() {
 
 function stopRecording() {
   if (state.recording?.recorder && state.recording.recorder.state !== "inactive") {
-    state.recording.stoppedWhilePaused = state.recording.recorder.state === "paused";
     state.recording.recorder.stop();
   }
 }
