@@ -370,7 +370,7 @@ function cookies(req) {
   }));
 }
 
-function currentUser(req) {
+async function currentUser(req) {
   if (!AUTH_REQUIRED) return { id: 0, email: "local@hisunpharm.com", role: "admin", mustChangePassword: false };
   return authStore.sessionUser(cookies(req).mv_session);
 }
@@ -385,8 +385,8 @@ function clearSessionCookie(req) {
   return `mv_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure ? "; Secure" : ""}`;
 }
 
-function requireUser(req, res, role) {
-  const user = currentUser(req);
+async function requireUser(req, res, role) {
+  const user = await currentUser(req);
   if (!user) {
     json(res, 401, { error: "登录已过期，请重新登录" });
     return null;
@@ -415,25 +415,25 @@ function checkLoginRateLimit(req, email) {
 
 async function handleAuth(req, res, pathname) {
   if (pathname === "/api/auth/session" && req.method === "GET") {
-    const user = currentUser(req);
+    const user = await currentUser(req);
     return json(res, 200, { authRequired: AUTH_REQUIRED, authenticated: Boolean(user), user });
   }
   if (pathname === "/api/auth/login" && req.method === "POST") {
-    if (!AUTH_REQUIRED) return json(res, 200, { authenticated: true, user: currentUser(req) });
+    if (!AUTH_REQUIRED) return json(res, 200, { authenticated: true, user: await currentUser(req) });
     const payload = await readJson(req, 100_000);
     const clearRateLimit = checkLoginRateLimit(req, payload.email);
     const user = await authStore.authenticate(payload.email, payload.password);
     if (!user) return json(res, 401, { error: "邮箱或密码不正确" });
     clearRateLimit();
-    const session = authStore.createSession(user.id);
+    const session = await authStore.createSession(user.id);
     return json(res, 200, { authenticated: true, user }, { "Set-Cookie": sessionCookie(req, session.token, session.expires) });
   }
   if (pathname === "/api/auth/logout" && req.method === "POST") {
-    authStore.deleteSession(cookies(req).mv_session);
+    await authStore.deleteSession(cookies(req).mv_session);
     return json(res, 200, { authenticated: false }, { "Set-Cookie": clearSessionCookie(req) });
   }
   if (pathname === "/api/auth/change-password" && req.method === "POST") {
-    const user = requireUser(req, res);
+    const user = await requireUser(req, res);
     if (!user) return;
     const payload = await readJson(req, 100_000);
     await authStore.changePassword(user.id, payload.currentPassword, payload.newPassword);
@@ -448,12 +448,21 @@ async function handleAuth(req, res, pathname) {
 }
 
 async function handleAdmin(req, res, pathname) {
-  const admin = requireUser(req, res, "admin");
+  const admin = await requireUser(req, res, "admin");
   if (!admin) return;
   if (pathname === "/api/admin/users" && req.method === "GET") return json(res, 200, { users: await authStore.listUsers() });
   if (pathname === "/api/admin/users" && req.method === "POST") {
     const payload = await readJson(req, 100_000);
-    return json(res, 200, await authStore.addUser(payload.email, payload.role));
+    const credentials = await authStore.addUser(payload.email, payload.role);
+    if (mailConfigured()) {
+      try {
+        const delivery = await sendAccessApprovedEmail(credentials);
+        return json(res, 200, { email: credentials.email, emailed: true, deliveryId: delivery.id });
+      } catch (error) {
+        return json(res, 200, { email: credentials.email, temporaryPassword: credentials.temporaryPassword, emailed: false, emailError: error.message || "邮件发送失败" });
+      }
+    }
+    return json(res, 200, { ...credentials, emailed: false, emailError: "邮件服务尚未配置" });
   }
   const userMatch = pathname.match(/^\/api\/admin\/users\/(\d+)$/);
   if (userMatch && req.method === "PATCH") {
@@ -468,8 +477,12 @@ async function handleAdmin(req, res, pathname) {
     if (requestMatch[2] === "approve") {
       if (!mailConfigured()) throw new Error("邮件服务尚未配置，暂不能批准申请；请先设置 BREVO_API_KEY 与 MAIL_FROM_EMAIL");
       const credentials = await authStore.approveRequest(requestMatch[1], admin.id);
-      const delivery = await sendAccessApprovedEmail(credentials);
-      return json(res, 200, { email: credentials.email, emailed: true, deliveryId: delivery.id });
+      try {
+        const delivery = await sendAccessApprovedEmail(credentials);
+        return json(res, 200, { email: credentials.email, emailed: true, deliveryId: delivery.id });
+      } catch (error) {
+        return json(res, 200, { email: credentials.email, temporaryPassword: credentials.temporaryPassword, emailed: false, emailError: error.message || "邮件发送失败" });
+      }
     }
     await authStore.rejectRequest(requestMatch[1], admin.id);
     return json(res, 200, { rejected: true });
@@ -798,7 +811,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/health") {
       return json(res, 200, { ok: true, apiConfigured: Boolean(API_KEY), apiKeySource: process.env.OPENAI_API_KEY ? "server" : API_KEY ? "temporary" : "none", authRequired: AUTH_REQUIRED, storage: process.env.DATABASE_URL ? "postgres" : "sqlite", emailConfigured: mailConfigured(), mapModel: MAP_MODEL, synthesisModel: SYNTHESIS_MODEL });
     }
-    if (url.pathname.startsWith("/api/") && !requireUser(req, res)) return;
+    if (url.pathname.startsWith("/api/")) {
+      const apiUser = await requireUser(req, res);
+      if (!apiUser) return;
+    }
     if (req.method === "POST" && url.pathname === "/api/analyze") return await handleAnalyze(req, res);
     if (req.method === "POST" && url.pathname === "/api/roles/identify") return await handleIdentifyRoles(req, res);
     if (req.method === "POST" && url.pathname === "/api/settings") {
@@ -812,12 +828,15 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET") {
       if (url.pathname === "/login" || url.pathname === "/login.html") return await serveStatic("/login.html", res);
       if (url.pathname === "/admin" || url.pathname === "/admin.html") {
-        const user = currentUser(req);
+        const user = await currentUser(req);
         if (AUTH_REQUIRED && !user) return redirect(res, "/login");
         if (AUTH_REQUIRED && user.role !== "admin") return redirect(res, "/");
         return await serveStatic("/admin.html", res);
       }
-      if ((url.pathname === "/" || url.pathname === "/index.html") && AUTH_REQUIRED && !currentUser(req)) return redirect(res, "/login");
+      if ((url.pathname === "/" || url.pathname === "/index.html") && AUTH_REQUIRED) {
+        const user = await currentUser(req);
+        if (!user) return redirect(res, "/login");
+      }
       return await serveStatic(url.pathname, res);
     }
     json(res, 405, { error: "Method not allowed" });

@@ -15,10 +15,27 @@ const api = async (url, options = {}) => {
 let lastCredential = "";
 
 function showCredential(email, password) {
+  if (!password) {
+    lastCredential = "";
+    $("#credentialBox").hidden = true;
+    return;
+  }
   lastCredential = `邮箱：${email}\n临时密码：${password}`;
   $("#credentialText").textContent = lastCredential;
   $("#credentialBox").hidden = false;
   $("#credentialBox").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function showDeliveryResult(data, actionText = "账号已开通") {
+  if (data.emailed) {
+    showCredential(data.email, "");
+    $("#adminMessage").textContent = `${actionText}，临时账号与密码已通过邮件发送至 ${data.email}。`;
+    $("#adminMessage").className = "message success";
+    return;
+  }
+  showCredential(data.email, data.temporaryPassword);
+  $("#adminMessage").textContent = `${actionText}，但邮件未发送成功：${data.emailError || "未知错误"}。请复制上方临时密码转发给同事，或稍后重置密码重试邮件发送。`;
+  $("#adminMessage").className = "message error";
 }
 
 function displayTime(value) {
@@ -54,7 +71,7 @@ function bindRows() {
   document.querySelectorAll("[data-reset]").forEach((button) => {
     button.onclick = async () => {
       const data = await api("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: button.dataset.email, role: button.dataset.role }) });
-      showCredential(data.email, data.temporaryPassword);
+      showDeliveryResult(data, "密码已重置");
       await load();
     };
   });
@@ -63,7 +80,7 @@ function bindRows() {
       button.disabled = true;
       button.textContent = "正在批准…";
       const data = await api(`/api/admin/requests/${button.dataset.approve}/approve`, { method: "POST" });
-      $("#adminMessage").textContent = `申请已批准，临时账号与密码已自动发送至 ${data.email}。`;
+      showDeliveryResult(data, "申请已批准");
       await load();
     };
   });
@@ -79,7 +96,7 @@ $("#addUserForm").onsubmit = async (event) => {
   event.preventDefault();
   try {
     const data = await api("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: $("#newUserEmail").value, role: $("#newUserRole").value }) });
-    showCredential(data.email, data.temporaryPassword);
+    showDeliveryResult(data, "账号已开通");
     $("#newUserEmail").value = "";
     await load();
   } catch (error) {
