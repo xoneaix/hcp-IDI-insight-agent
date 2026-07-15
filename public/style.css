@@ -39,3 +39,16 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 @media(max-width:1050px){.outline-workspace{grid-template-columns:1fr}.readiness-grid{grid-template-columns:1fr 1fr}.recording-console{grid-template-columns:1fr 1fr}.recording-actions{justify-content:flex-end}}
 @media(max-width:720px){.sidebar{grid-template-columns:repeat(5,1fr)}.readiness-grid{grid-template-columns:1fr 1fr}.matrix-actions{align-items:flex-start;margin-top:16px;flex-direction:column}.recording-console{grid-template-columns:1fr}.recording-actions{justify-content:flex-start}.recording-time{font-size:20px}.outline-upload{grid-template-columns:auto 1fr}.outline-upload button{grid-column:1/-1}.live-transcript{grid-column:1}}
 @media(max-width:460px){.readiness-grid{grid-template-columns:1fr}.outline-workspace{display:block}.question-panel{margin-top:16px}}
+
+/* Sidebar bottom utilities: account/help actions live with the left navigation, not the primary topbar workflow. */
+.sidebar-utilities{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.sidebar-utilities .utility-button{min-height:32px;padding:0 9px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.055);color:#c7d7d1;box-shadow:none;font-size:10px;font-weight:600}
+.sidebar-utilities .utility-button span{width:14px;height:14px;background:transparent;color:#9fb7ae;border-radius:0}
+.sidebar-utilities .utility-button svg{display:block;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.85;stroke-linecap:round;stroke-linejoin:round}
+.sidebar-utilities .utility-button b{font:600 10px/1 "Noto Sans SC",system-ui,sans-serif;letter-spacing:0}
+.sidebar-utilities .utility-button:hover{border-color:rgba(223,242,91,.28);background:rgba(255,255,255,.1);color:#fff;box-shadow:none;transform:none}
+.sidebar-utilities .logout-button{color:#d8e5df}
+.sidebar-utilities .logout-button span{color:#dff25b}
+.sidebar-utilities .help-button span{color:#a9beb6}
+@media(max-width:1050px){.sidebar-utilities{grid-template-columns:1fr}.sidebar-utilities .utility-button{min-width:34px;padding:0}.sidebar-utilities .utility-button b{display:none}}
+@media(max-width:720px){.sidebar-utilities{display:none}}
