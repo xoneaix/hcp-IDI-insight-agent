@@ -18,6 +18,18 @@ dialog{border:0;padding:0;border-radius:18px;width:min(580px,calc(100vw - 30px))
 @media(max-width:1050px){.role-mapper-head{display:block}.role-actions{margin-top:14px}.role-flow{grid-template-columns:1fr 1fr}}
 @media(max-width:720px){.role-actions{display:grid}.role-flow{grid-template-columns:1fr}.role-summary{display:grid}.role-mapper-panel{padding:18px}}
 
+/* Topbar utility actions: keep logout/help visually aligned with the MedVoice control system. */
+.top-actions .utility-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:0 11px;border-radius:9px;border:1px solid #d8dfdb;background:#fff;color:#31574e;box-shadow:none;cursor:pointer;font-size:10px;font-weight:600;letter-spacing:0;white-space:nowrap;transition:border-color .18s,background .18s,color .18s,box-shadow .18s}
+.top-actions .utility-button span{display:inline-grid;place-items:center;width:14px;height:14px;border-radius:0;background:transparent;color:#477063;line-height:1;flex-shrink:0}
+.top-actions .utility-button svg{display:block;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.top-actions .utility-button b{font:600 10px/1 "Noto Sans SC",system-ui,sans-serif;letter-spacing:0}
+.top-actions .utility-button:hover{border-color:#adc0b8;background:#f8fbf9;color:#245c4d;box-shadow:0 7px 16px rgba(36,92,77,.06);transform:none}
+.top-actions .logout-button{background:#fff;color:#31574e;border-color:#d8dfdb}
+.top-actions .logout-button span{background:transparent;color:#477063}
+.top-actions .logout-button:hover{background:#f8fbf9;border-color:#adc0b8}
+.top-actions .help-button span{color:#60756e}
+@media(max-width:720px){.top-actions .utility-button{min-width:34px;padding:0 9px}.top-actions .utility-button b{display:none}}
+
 .recording-options{display:flex;align-items:end;gap:10px}.auto-transcribe{display:flex;align-items:center;gap:6px;min-height:32px;padding:0 8px;font-size:9px;color:var(--green);white-space:nowrap}.source-badge{display:inline-flex!important;width:max-content;margin-top:5px!important;padding:2px 6px;border-radius:5px;background:#e8f2ed;color:var(--green)!important;font-size:8px!important}.source-badge.live{background:#fff0f0;color:#a5464b!important}.file-error{max-width:560px;white-space:normal;color:#a54b4f!important;line-height:1.5}.status-pill.failed{background:#fae9e9;color:#a85256}.status-pill.saved{background:#edf1ff;color:#5e65a0}.transcribe-button.retry{border-color:#d39a9d;color:#9d464a}.transcript-progress{display:block;margin-top:4px;color:#8b6a2e;font-size:8px;white-space:normal}
 @media(max-width:1050px){.recording-options{align-items:start;flex-wrap:wrap}.auto-transcribe{width:100%}}
 
