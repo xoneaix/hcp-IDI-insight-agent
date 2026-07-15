@@ -670,6 +670,19 @@ async function convertMediaToM4a(sourcePath, outputPath) {
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+function humanizeOpenAIError(error) {
+  const message = error?.message || "";
+  const code = error?.code || "";
+  const status = error?.status;
+  if (status === 429 || /quota|billing|insufficient_quota/i.test(`${message} ${code}`)) {
+    return "OpenAI API 额度不足或账单未开通，请检查 OpenAI Platform 的 Billing / Usage、月度限额，或在 Render 环境变量中更换有额度的 OPENAI_API_KEY。";
+  }
+  if (status === 401 || /invalid api key|incorrect api key|unauthorized/i.test(message)) {
+    return "OpenAI API Key 无效或已失效，请更新 Render 环境变量 OPENAI_API_KEY 后重新部署。";
+  }
+  return message || "未知错误";
+}
+
 async function requestTranscription(bytes, filename, mimeType, mode) {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -693,8 +706,10 @@ async function requestTranscription(bytes, filename, mimeType, mode) {
       });
       const data = await response.json().catch(() => ({}));
       if (response.ok) return data;
-      const error = new Error(data?.error?.message || `转录服务返回错误 (${response.status})`);
+      const openAIError = data?.error || {};
+      const error = new Error(humanizeOpenAIError({ ...openAIError, status: response.status }));
       error.status = response.status;
+      error.code = openAIError.code || "";
       throw error;
     } catch (error) {
       lastError = error;
@@ -717,7 +732,7 @@ async function transcribeAudioBytes(bytes, filename, mimeType = "audio/mp4") {
     return { ...data, transcription_mode: "speaker-diarization" };
   } catch (primaryError) {
     const modelUnavailable = [400, 403, 404].includes(primaryError.status) && /model|diariz|access|permission|not found|unsupported/i.test(primaryError.message || "");
-    if (!modelUnavailable) throw new Error(`OpenAI 转录失败${primaryError.status ? ` (${primaryError.status})` : ""}：${primaryError.message}`);
+    if (!modelUnavailable) throw new Error(`OpenAI 转录失败${primaryError.status ? ` (${primaryError.status})` : ""}：${humanizeOpenAIError(primaryError)}`);
     const fallback = await requestTranscription(bytes, filename, mimeType, "whisper").catch((error) => {
       throw new Error(`说话人转录模型不可用，兼容转录也失败${error.status ? ` (${error.status})` : ""}：${error.message}`);
     });

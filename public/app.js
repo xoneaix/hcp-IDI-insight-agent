@@ -143,6 +143,19 @@ function formatFileSize(bytes) {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+function humanizeTranscriptionError(message = "") {
+  if (/quota|billing|insufficient_quota|429/i.test(message)) {
+    return "OpenAI API 额度不足或账单未开通，当前无法完成真实 AI 转录。请到 OpenAI Platform 的 Billing / Usage 检查余额、月度限额或更换有额度的 API Key；额度恢复后可点击“重新转录”。";
+  }
+  if (/401|unauthorized|invalid api key|incorrect api key/i.test(message)) {
+    return "OpenAI API Key 无效或已失效，请在 Render 环境变量中更新 OPENAI_API_KEY 后重新部署。";
+  }
+  if (/413|too large|请求内容过大/i.test(message)) {
+    return "音视频文件过大，请使用大型文件自动分片转录，或缩短录音后重试。";
+  }
+  return message || "未知错误";
+}
+
 async function mediaMetadata(file) {
   if (!file.type.startsWith("audio/") && !file.type.startsWith("video/")) return { seconds: null, label: "—" };
   return new Promise((resolve) => {
@@ -186,6 +199,7 @@ async function addFiles(files, options = {}) {
       file,
       source: options.source || "上传文件",
       recordedAt: options.recordedAt || "",
+      draftText: options.draftText || "",
       error: "",
       selected: true
     });
@@ -266,10 +280,21 @@ async function transcribeInterview(index) {
     if (data.duration) item.duration = formatDuration(data.duration);
     toast(`${item.id} 转录完成${data.chunks ? `（${data.chunks} 个音频分片）` : ""}`);
   } catch (error) {
-    item.status = "转录失败";
-    item.progressText = "错误详情已保留，可修正后点击“重试”";
-    item.error = error.message || "未知错误";
-    toast(`转录失败：${item.error}`, 8000);
+    const friendlyError = humanizeTranscriptionError(error.message);
+    const isQuotaError = /quota|billing|insufficient_quota|429/i.test(error.message || "");
+    const draftText = String(item.draftText || "").trim();
+    if (isQuotaError && item.source === "实时录音" && draftText) {
+      item.text = `【浏览器实时语音预览稿｜AI 转录未完成】\n待语义识别 [00:00]：${draftText}`;
+      item.status = "预览稿待复核";
+      item.progressText = "AI 额度不足，已先保存浏览器实时预览文本；额度恢复后可点击“重新转录”。";
+      item.error = friendlyError;
+      toast("AI 额度不足：已先保存实时语音预览稿，恢复额度后可重新转录。", 8000);
+    } else {
+      item.status = "转录失败";
+      item.progressText = "错误详情已保留，可修正后点击“重试”";
+      item.error = friendlyError;
+      toast(`转录失败：${item.error}`, 8000);
+    }
   }
   renderAll();
 }
@@ -623,6 +648,7 @@ async function startRecording() {
     recorder.onstop = async () => {
       const session = state.recording;
       const durationSeconds = Math.max(1, getRecordingElapsedSeconds(session));
+      const draftText = String(session?.livePreviewText || $("#liveTranscript").textContent || "").replace(/^(正在聆听…|尚未开始)$/u, "").trim();
       const extension = recorder.mimeType.includes("mp4") ? "m4a" : "webm";
       const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -641,6 +667,7 @@ async function startRecording() {
         source: "实时录音",
         type: $("#recordRespondentType").value,
         durationSeconds,
+        draftText,
         recordedAt: new Date().toLocaleString("zh-CN", { hour12: false })
       });
       if (Number.isInteger(newIndex) && $("#autoTranscribeRecording").checked) {
@@ -651,7 +678,7 @@ async function startRecording() {
       }
     };
     recorder.start(1000);
-    state.recording = { recorder, stream, startedAt: Date.now(), pausedAt: 0, pauseStarted: null, timer: setInterval(updateRecordingTime, 500) };
+    state.recording = { recorder, stream, startedAt: Date.now(), pausedAt: 0, pauseStarted: null, livePreviewText: "", timer: setInterval(updateRecordingTime, 500) };
     $("#recordingConsole").classList.add("active");
     $("#recordingStatus").textContent = "正在录音";
     $("#recordingTime").textContent = "00:00";
@@ -720,7 +747,9 @@ function startSpeechPreview() {
       const text = event.results[index][0].transcript;
       if (event.results[index].isFinal) finalText += `${text} `; else interim += text;
     }
-    $("#liveTranscript").textContent = finalText + interim;
+    const previewText = finalText + interim;
+    $("#liveTranscript").textContent = previewText;
+    if (state.recording) state.recording.livePreviewText = previewText;
   };
   recognition.onerror = () => {};
   recognition.start();
