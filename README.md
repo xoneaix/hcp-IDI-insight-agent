@@ -13,6 +13,14 @@ cd "/Users/nielun/Documents/Codex OneAI/hcp-insight-agent"
 
 打开 <http://localhost:4174>。应用默认是完全空白状态，不包含任何预置访谈、洞察或报告。未配置密钥时仍可验证页面、文件导入、实时录音、大纲解析和问题识别；AI 转录与分析需要配置密钥。
 
+如果 Codex 的 Web preview 提示 `ERR_CONNECTION_REFUSED`，说明本地服务尚未启动。可双击或运行：
+
+```bash
+./scripts/start-preview.command
+```
+
+然后访问 <http://127.0.0.1:4174/>。正式演示时建议使用 `http://127.0.0.1:4174/` 作为入口，不要直接打开 `file:///.../public/admin.html`。
+
 ## 启用真实 AI
 
 推荐直接点击页面右上角的“连接 AI”，输入 API Key 并完成资料处理授权确认。Key 仅保存在当前本机服务的内存中，不写入页面、浏览器存储或磁盘，服务重启后自动清除。
