@@ -385,6 +385,10 @@ function isSecureRequest(req) {
   return Boolean(process.env.RENDER || req.headers["x-forwarded-proto"] === "https" || req.headers["x-forwarded-ssl"] === "on");
 }
 
+function isLocalHost(host) {
+  return /^localhost(?::\d+)?$/i.test(host) || /^127\.0\.0\.1(?::\d+)?$/i.test(host);
+}
+
 function sessionCookie(req, token, expires) {
   const secure = isSecureRequest(req);
   const maxAge = Math.max(0, Math.floor((expires.getTime() - Date.now()) / 1000));
@@ -947,10 +951,31 @@ function assertLocalOrigin(req) {
   const origin = req.headers.origin;
   if (!origin) return;
   const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").toLowerCase();
+  if (!process.env.RENDER && origin === "null" && isLocalHost(host)) return;
   let originHost = "";
   try { originHost = new URL(origin).host.toLowerCase(); } catch {}
   const allowed = new Set([host, `localhost:${PORT}`, `127.0.0.1:${PORT}`]);
   if (!allowed.has(originHost)) throw new Error("仅允许从当前 MedVoice Portal 调用服务");
+}
+
+function applyApiCors(req, res) {
+  const origin = req.headers.origin;
+  if (!origin) return;
+  const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").toLowerCase();
+  let allowedOrigin = "";
+  if (!process.env.RENDER && origin === "null" && isLocalHost(host)) {
+    allowedOrigin = "null";
+  } else {
+    let originHost = "";
+    try { originHost = new URL(origin).host.toLowerCase(); } catch {}
+    const allowed = new Set([host, `localhost:${PORT}`, `127.0.0.1:${PORT}`]);
+    if (allowed.has(originHost)) allowedOrigin = origin;
+  }
+  if (!allowedOrigin) return;
+  res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Filename");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
 }
 
 async function serveStatic(pathname, res) {
@@ -973,7 +998,10 @@ async function serveStatic(pathname, res) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
-    if (url.pathname.startsWith("/api/")) assertLocalOrigin(req);
+    if (url.pathname.startsWith("/api/")) {
+      applyApiCors(req, res);
+      assertLocalOrigin(req);
+    }
     if (req.method === "OPTIONS") {
       res.writeHead(204);
       return res.end();

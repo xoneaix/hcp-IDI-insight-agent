@@ -1,11 +1,15 @@
 const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
+const IS_FILE_PREVIEW = location.protocol === "file:";
+const API_BASE = IS_FILE_PREVIEW ? "http://127.0.0.1:4174" : "";
+const WORKSPACE_URL = IS_FILE_PREVIEW ? "index.html" : "/";
+const LOGIN_URL = IS_FILE_PREVIEW ? `${API_BASE}/login` : "/login";
 
 const api = async (url, options = {}) => {
-  const response = await fetch(url, options);
-  const data = await response.json();
+  const response = await fetch(`${API_BASE}${url}`, { credentials: IS_FILE_PREVIEW ? "include" : "same-origin", ...options });
+  const data = await response.json().catch(() => ({}));
   if (response.status === 401) {
-    location.href = "/login";
+    location.href = LOGIN_URL;
     throw new Error("登录已过期");
   }
   if (!response.ok) throw new Error(data.error || "请求失败");
@@ -44,8 +48,12 @@ function displayTime(value) {
 }
 
 async function load() {
+  $("#backToWorkspace").href = WORKSPACE_URL;
+  if (IS_FILE_PREVIEW) {
+    $("#adminSystemStatus").textContent = "本地文件预览模式：将自动连接 http://127.0.0.1:4174。若下方提示 Failed to fetch，请先启动本地服务。";
+  }
   const session = await api("/api/auth/session");
-  if (!session.user || session.user.role !== "admin") return location.assign("/");
+  if (!session.user || session.user.role !== "admin") return location.assign(WORKSPACE_URL);
   $("#adminIdentity").textContent = `管理员：${session.user.email}`;
   const [usersData, requestsData, allowlistData, health] = await Promise.all([api("/api/admin/users"), api("/api/admin/requests"), api("/api/admin/allowed-emails"), api("/api/health")]);
   const persistent = health.storage === "postgres";
@@ -156,7 +164,11 @@ $("#copyCredential").onclick = async () => {
 };
 $("#logoutButton").onclick = async () => {
   await api("/api/auth/logout", { method: "POST" });
-  location.href = "/login";
+  location.href = LOGIN_URL;
 };
 
-load().catch((error) => { $("#adminMessage").textContent = error.message; });
+load().catch((error) => {
+  const localHint = IS_FILE_PREVIEW ? "。本地演示请先在终端运行本地服务，然后访问 http://127.0.0.1:4174/admin；或点击“返回工作台”回到本地静态工作台。" : "";
+  $("#adminMessage").textContent = `${error.message}${localHint}`;
+  $("#adminMessage").className = "message error";
+});

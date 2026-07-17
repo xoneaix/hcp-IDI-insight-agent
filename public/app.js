@@ -19,6 +19,9 @@ const state = {
 };
 
 const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:4174" : "";
+const WORKSPACE_URL = location.protocol === "file:" ? "index.html" : "/";
+const ADMIN_URL = location.protocol === "file:" ? "admin.html" : "/admin";
+const LOGIN_URL = location.protocol === "file:" ? `${API_BASE}/login` : "/login";
 const VIEW_STORAGE_KEY = "medvoice.activeView";
 const LOCAL_DB_NAME = "medvoice-interview-library";
 const LOCAL_DB_VERSION = 1;
@@ -1090,8 +1093,8 @@ $("#apiSettingsButton").addEventListener("click", () => {
   if (state.authRequired && state.currentUser?.role !== "admin") return toast("请联系 Portal 管理员配置 AI 服务");
   openApiSettings();
 });
-$("#adminAccess").addEventListener("click", () => { location.href = "/admin"; });
-$("#portalLogout").addEventListener("click", async () => { await fetch("/api/auth/logout", { method: "POST" }); location.href = "/login"; });
+$("#adminAccess").addEventListener("click", () => { location.href = ADMIN_URL; });
+$("#portalLogout").addEventListener("click", async () => { await fetch(`${API_BASE}/api/auth/logout`, { method: "POST", credentials: location.protocol === "file:" ? "include" : "same-origin" }); location.href = LOGIN_URL; });
 $("#apiSettingsForm").addEventListener("submit", saveApiSettings);
 $("#clearApiKey").addEventListener("click", clearApiSettings);
 $("#cancelApiSettings").addEventListener("click", () => { state.pendingAfterConnect = null; $("#apiSettingsDialog").close(); });
