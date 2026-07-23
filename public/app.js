@@ -992,6 +992,7 @@ function renderTranscripts() {
     table.innerHTML = '<tr><td colspan="6" class="empty-row">尚未导入资料。可上传文件或使用“实时录音”。</td></tr>';
   } else {
     table.innerHTML = state.interviews.map((item, index) => {
+      if (item.roleResult && /正在区分对话角色/.test(item.progressText || "")) item.progressText = "角色区分完成，可在下方预览并导出 Word。";
       const isMedia = (item.file || item.hasFile) && !/\.(txt|md|csv|json)$/i.test(item.name);
       const actionLabel = isMedia ? (item.text ? "重新转录" : item.status === "转录失败" || item.status === "转换失败" ? "重试" : "转录") : "无需转录";
       const transcribeClass = item.text ? "retranscribe" : item.status === "转录失败" || item.status === "转换失败" ? "retry" : "primary";
@@ -1365,7 +1366,7 @@ async function identifyRolesForItems(ready) {
       renderAll();
       clearInterval(ticker);
       ticker = setInterval(() => {
-        if (!state.roleProcessing || !state.roleProgress) return;
+        if (!state.roleProcessing || !state.roleProgress || item.status !== "角色区分中") return;
         state.roleProgress.percent = Math.min(ceilingPercent, Math.round((state.roleProgress.percent || basePercent) + Math.max(1, 10 / ready.length)));
         item.progressText = `正在区分对话角色（${state.roleProgress.percent}%）`;
         renderAll();
@@ -1383,6 +1384,8 @@ async function identifyRolesForItems(ready) {
         await persistInterview(state.interviews.indexOf(item));
         throw new Error(data.error || `${item.id} 角色区分失败`);
       }
+      clearInterval(ticker);
+      ticker = null;
       const result = data.results?.[0];
       if (result) {
         item.roleResult = result;
