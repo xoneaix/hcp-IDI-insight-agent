@@ -529,6 +529,11 @@ async function persistInterview(index) {
   await saveLocalInterview(index);
   try {
     item.persisting = true;
+    item.uploadProgress = item.serverId ? null : Math.max(3, item.uploadProgress || 0);
+    if (!item.serverId && item.file) {
+      item.progressText = `正在保存到账号资料库（${item.uploadProgress}%）`;
+      renderTranscripts();
+    }
     let response;
     if (item.serverId) {
       response = await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}`, {
@@ -537,28 +542,57 @@ async function persistInterview(index) {
         body: JSON.stringify(interviewPayload(item))
       });
     } else if (item.file) {
-      response = await fetch(`${API_BASE}/api/library/items`, {
-        method: "POST",
-        headers: {
-          "Content-Type": item.file.type || "application/octet-stream",
-          "X-MedVoice-Meta": encodeURIComponent(JSON.stringify(interviewPayload(item)))
-        },
-        body: item.file
+      response = await uploadLibraryItem(item, (percent) => {
+        item.uploadProgress = percent;
+        item.progressText = `正在保存到账号资料库（${percent}%）`;
+        renderTranscripts();
       });
     } else {
       return;
     }
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "资料保存失败");
+    const data = response instanceof Response ? await response.json().catch(() => ({})) : response;
+    if (response instanceof Response && !response.ok) throw new Error(data.error || "资料保存失败");
     if (data.item) applyPersistedItem(item, data.item);
     item.persistError = "";
+    item.uploadProgress = 100;
+    if (/正在保存到账号资料库/.test(item.progressText || "")) item.progressText = "";
     await saveLocalInterview(index);
   } catch (error) {
     item.persistError = humanizeFileTransferError(error.message);
     toast(`资料未能保存到账户：${item.persistError}`, 6000);
   } finally {
     item.persisting = false;
+    if (item.uploadProgress === 100 || item.persistError) item.uploadProgress = null;
+    renderTranscripts();
   }
+}
+
+function uploadLibraryItem(item, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE}/api/library/items`);
+    xhr.setRequestHeader("Content-Type", item.file.type || "application/octet-stream");
+    xhr.setRequestHeader("X-MedVoice-Meta", encodeURIComponent(JSON.stringify(interviewPayload(item))));
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      const percent = Math.min(98, Math.max(3, Math.round((event.loaded / event.total) * 98)));
+      onProgress(percent);
+    };
+    xhr.onload = () => {
+      const data = (() => {
+        try { return JSON.parse(xhr.responseText || "{}"); } catch { return {}; }
+      })();
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress(100);
+        resolve(data);
+      } else {
+        reject(new Error(data.error || `资料保存失败（${xhr.status}）`));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Failed to fetch"));
+    xhr.onabort = () => reject(new Error("资料保存已取消"));
+    xhr.send(item.file);
+  });
 }
 
 async function persistAllInterviews() {
@@ -665,19 +699,15 @@ async function addFiles(files, options = {}) {
   for (const file of files) {
     if (!supported.test(file.name) && !file.type.startsWith("audio/") && !file.type.startsWith("video/") && !file.type.startsWith("text/")) continue;
     const isText = /\.(txt|md|csv|json)$/i.test(file.name) || file.type.startsWith("text/");
-    const text = isText ? await file.text() : "";
-    const metadata = Number.isFinite(options.durationSeconds)
-      ? { seconds: options.durationSeconds, label: formatDuration(options.durationSeconds) }
-      : await mediaMetadata(file);
     const index = state.interviews.length;
-    state.interviews.push({
+    const item = {
       id: nextId(options.type),
       name: file.name,
       type: normalizeRespondentType(options.type),
-      duration: metadata.label,
-      durationSeconds: metadata.seconds,
+      duration: Number.isFinite(options.durationSeconds) ? formatDuration(options.durationSeconds) : isText ? "—" : "读取中",
+      durationSeconds: Number.isFinite(options.durationSeconds) ? options.durationSeconds : null,
       status: isText ? "可分析" : options.source === "实时录音" ? "录音已保存" : "待转录",
-      text,
+      text: "",
       file,
       fileName: file.name,
       fileSize: file.size,
@@ -687,10 +717,22 @@ async function addFiles(files, options = {}) {
       recordedAt: options.recordedAt || "",
       draftText: options.draftText || "",
       error: "",
+      progressText: "正在准备导入…",
+      uploadProgress: 1,
       selected: true
-    });
+    };
+    state.interviews.push(item);
     added += 1;
     addedIndexes.push(index);
+    renderAll();
+    if (isText) item.text = await file.text();
+    if (!Number.isFinite(options.durationSeconds)) {
+      const metadata = await mediaMetadata(file);
+      item.duration = metadata.label;
+      item.durationSeconds = metadata.seconds;
+    }
+    item.progressText = "正在保存到账号资料库…";
+    renderTranscripts();
     await persistInterview(index);
   }
   renderAll();
@@ -710,12 +752,13 @@ function renderTranscripts() {
       const statusClass = item.status.includes("中") || item.status.includes("预处理") ? "processing" : item.status === "转录失败" || item.status === "转换失败" ? "failed" : item.status === "录音已保存" ? "saved" : "";
       const sourceLabel = item.source === "实时录音" ? `实时录音${item.recordedAt ? ` · ${escapeHTML(item.recordedAt)}` : ""}` : item.source === "音频预处理" ? "音频预处理" : "上传文件";
       const fileSize = item.file?.size || item.fileSize || 0;
+      const uploadProgress = Number.isFinite(item.uploadProgress) ? Math.min(100, Math.max(0, item.uploadProgress)) : null;
       return `<tr>
         <td><input class="row-check" type="checkbox" data-index="${index}" ${item.selected ? "checked" : ""} aria-label="选择 ${escapeHTML(item.id)}" /></td>
         <td><strong>${escapeHTML(item.id)} · ${escapeHTML(item.name)}</strong><small class="${fileSize > 24 * 1024 * 1024 && !item.text ? "large-file-note" : "file-size-note"}">${item.roleResult ? "已区分角色 · 可导出问答 Word" : item.text ? "已建立逐字稿" : fileSize > 24 * 1024 * 1024 ? `${formatFileSize(fileSize)} · 服务端提取音轨并自动分片` : `${formatFileSize(fileSize)} · 等待语音转录`}${item.persisted ? " · 已保存到账户" : item.localPersisted ? " · 已保存本机备份" : item.persisting ? " · 保存中" : ""}</small><span class="source-badge ${item.source === "实时录音" ? "live" : ""}">${sourceLabel}</span>${item.error ? `<small class="file-error">失败原因：${escapeHTML(humanizeFileTransferError(item.error))}</small>` : ""}${item.persistError ? `<small class="file-error">保存提示：${escapeHTML(humanizeFileTransferError(item.persistError))}</small>` : ""}${item.localPersistError ? `<small class="file-error">本机备份提示：${escapeHTML(humanizeFileTransferError(item.localPersistError))}</small>` : ""}</td>
         <td><select class="type-select" data-index="${index}" aria-label="受访者类型"><option value="HCP" ${normalizeRespondentType(item.type) === "HCP" ? "selected" : ""}>HCP</option><option value="Patient" ${normalizeRespondentType(item.type) === "Patient" ? "selected" : ""}>Patient</option></select></td>
         <td>${escapeHTML(item.duration)}</td>
-        <td><span class="status-pill ${statusClass}">${escapeHTML(item.status)}</span>${item.progressText ? `<small class="transcript-progress">${escapeHTML(item.progressText)}</small>` : ""}</td>
+        <td><span class="status-pill ${statusClass}">${escapeHTML(item.status)}</span>${item.progressText ? `<small class="transcript-progress">${escapeHTML(item.progressText)}</small>` : ""}${uploadProgress !== null ? `<span class="upload-progress-bar" aria-label="上传保存进度 ${uploadProgress}%"><i style="width:${uploadProgress}%"></i></span>` : ""}</td>
         <td><div class="row-actions"><button class="transcribe-button ${item.status === "转录失败" ? "retry" : ""}" data-index="${index}" ${isMedia ? "" : "disabled"}>${actionLabel}</button>${canConvertAudio ? `<button class="convert-row-button" data-index="${index}">生成 M4A 并转录</button>` : ""}</div></td>
       </tr>`;
     }).join("");
@@ -953,9 +996,9 @@ function renderRoleMapper() {
   $("#exportRoleWord").disabled = state.roleProcessing || !selectedForWord.length;
   $("#deleteRoleDocs").disabled = state.roleProcessing || !selectedForWord.length;
   $("#selectAllRoleDocs").disabled = state.roleProcessing || !completed.length;
-  $("#selectAllRoleDocs").textContent = allRoleDocsSelected ? "取消全选" : "全选 Word";
-  $("#exportRoleWord").textContent = selectedForWord.length ? `导出所选 Word (${selectedForWord.length}) ↗` : "导出所选 Word ↗";
-  $("#identifyRoles").textContent = state.roleProcessing ? "正在理解对话角色…" : "✦ 区分所选访谈角色";
+  $("#selectAllRoleDocs").textContent = allRoleDocsSelected ? "取消全选" : "全选";
+  $("#exportRoleWord").textContent = selectedForWord.length ? `导出 Word (${selectedForWord.length}) ↗` : "导出 Word ↗";
+  $("#identifyRoles").textContent = state.roleProcessing ? "处理中…" : "✦ 区分角色";
   $(".role-mapper-panel").classList.toggle("processing", state.roleProcessing);
   $("#roleSummary").textContent = ready.length
     ? `${ready.length} 份所选访谈可处理 · ${completed.length} 份已完成角色区分 · ${selectedForWord.length} 份勾选待导出`
