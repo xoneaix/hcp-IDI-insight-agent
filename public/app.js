@@ -32,6 +32,7 @@ const LOGIN_URL = location.protocol === "file:" ? `${API_BASE}/login` : "/login"
 const VIEW_STORAGE_KEY = "medvoice.activeView";
 const PROJECTS_STORAGE_KEY = "medvoice.projects";
 const ACTIVE_PROJECT_STORAGE_KEY = "medvoice.activeProject";
+const DELETED_INTERVIEWS_STORAGE_KEY = "medvoice.deletedInterviews";
 const INITIAL_HASH = location.hash;
 const LARGE_CONVERSION_CHUNK_THRESHOLD = 80 * 1024 * 1024;
 const CONVERSION_CHUNK_SIZE = 8 * 1024 * 1024;
@@ -323,12 +324,13 @@ async function convertInterviewAudio(index, options = {}) {
     const { outputName, blob } = await downloadConversionResult(job, { save: false });
     const audioFile = new File([blob], outputName, { type: blob.type || "audio/mp4" });
     const originalServerId = item.serverId;
-    await deleteLocalInterview(item);
+    await deleteLocalInterview(item, { remember: false });
     if (originalServerId) await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(originalServerId)}`, { method: "DELETE" }).catch(() => {});
     item.serverId = "";
     item.persisted = false;
     item.localPersisted = false;
     mergeConvertedAudioIntoSource(item, audioFile, outputName, job.convertedSize);
+    forgetDeletedInterview(item);
     await persistInterview(index);
     renderAll();
     toast(`${item.id} 已自动转换为 M4A，正在转录轻量音频`, 4500);
@@ -543,6 +545,44 @@ function localLibraryKey(item) {
   return `${accountLibraryPrefix()}${safeProjectId(item?.projectId || state.activeProjectId)}::${item.serverId || item.id}`;
 }
 
+function deletedInterviewKeys() {
+  try { return new Set(JSON.parse(localStorage.getItem(DELETED_INTERVIEWS_STORAGE_KEY) || "[]")); } catch { return new Set(); }
+}
+
+function saveDeletedInterviewKeys(keys) {
+  try { localStorage.setItem(DELETED_INTERVIEWS_STORAGE_KEY, JSON.stringify([...keys].slice(-1200))); } catch {}
+}
+
+function interviewIdentityKeys(item = {}, options = {}) {
+  const projectId = safeProjectId(item.projectId || state.activeProjectId);
+  const account = state.currentUser?.email || "local";
+  const includeClientId = options.includeClientId !== false;
+  const parts = [item.serverId, item.fileName, item.name, item.derivedFromId, includeClientId ? item.id : ""].filter(Boolean).map(String);
+  return [...new Set(parts.flatMap((part) => [
+    `${account}::${projectId}::${part}`,
+    `${account}::${part}`,
+    `${projectId}::${part}`,
+    part
+  ]))];
+}
+
+function rememberDeletedInterview(item, options = {}) {
+  const keys = deletedInterviewKeys();
+  for (const key of interviewIdentityKeys(item, options)) keys.add(key);
+  saveDeletedInterviewKeys(keys);
+}
+
+function isDeletedInterview(item) {
+  const keys = deletedInterviewKeys();
+  return interviewIdentityKeys(item).some((key) => keys.has(key));
+}
+
+function forgetDeletedInterview(item) {
+  const keys = deletedInterviewKeys();
+  for (const key of interviewIdentityKeys(item)) keys.delete(key);
+  saveDeletedInterviewKeys(keys);
+}
+
 function openLocalLibrary() {
   return new Promise((resolve, reject) => {
     if (!window.indexedDB) return reject(new Error("当前浏览器不支持本地资料备份"));
@@ -601,7 +641,7 @@ async function loadLocalInterviews() {
     const prefix = accountLibraryPrefix();
     return await withLocalStore("readonly", (store) => new Promise((resolve, reject) => {
       const request = store.getAll();
-      request.onsuccess = () => resolve((request.result || []).filter((record) => String(record.key || "").startsWith(prefix)));
+      request.onsuccess = () => resolve((request.result || []).filter((record) => String(record.key || "").startsWith(prefix) && !record.deleted));
       request.onerror = () => reject(request.error || new Error("本地资料读取失败"));
     }));
   } catch {
@@ -616,9 +656,31 @@ async function clearLocalInterviews() {
   }).catch(() => {});
 }
 
-async function deleteLocalInterview(item) {
+async function deleteLocalInterview(item, options = {}) {
   if (!item) return;
-  await withLocalStore("readwrite", (store) => store.delete(localLibraryKey(item))).catch(() => {});
+  if (options.remember !== false) rememberDeletedInterview(item, { includeClientId: options.includeClientId });
+  await withLocalStore("readwrite", (store) => new Promise((resolve, reject) => {
+    const request = store.getAll();
+    request.onerror = () => reject(request.error || new Error("本机备份读取失败"));
+    request.onsuccess = () => {
+      const identity = new Set(interviewIdentityKeys(item, { includeClientId: options.includeClientId }));
+      const directKeys = new Set([localLibraryKey(item), ...identity]);
+      for (const record of request.result || []) {
+        const meta = record.meta || {};
+        const recordIdentity = new Set(interviewIdentityKeys({
+          projectId: meta.projectId || meta.project_id,
+          id: meta.clientId,
+          serverId: record.serverId,
+          name: meta.name,
+          fileName: record.fileName,
+          derivedFromId: meta.derivedFromId
+        }, { includeClientId: options.includeClientId }));
+        const sameRecord = directKeys.has(record.key) || [...recordIdentity].some((key) => identity.has(key));
+        if (sameRecord) store.delete(record.key);
+      }
+      resolve();
+    };
+  })).catch(() => {});
 }
 
 function itemFromLocalRecord(record) {
@@ -690,7 +752,7 @@ async function removeSupersededVideoSources(items) {
   }
   for (const item of removed) {
     if (item.serverId) await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}`, { method: "DELETE" }).catch(() => {});
-    await deleteLocalInterview(item);
+    await deleteLocalInterview(item, { includeClientId: false });
   }
   return kept;
 }
@@ -821,7 +883,7 @@ async function loadInterviewLibrary() {
         byId.set(key, localItem);
       }
     }
-    state.allInterviews = await removeSupersededVideoSources([...byId.values()].map(normalizeLoadedInterviewState));
+    state.allInterviews = await removeSupersededVideoSources([...byId.values()].map(normalizeLoadedInterviewState).filter((item) => !isDeletedInterview(item)));
     mergeProjectsFromInterviews();
     saveProjects();
     syncCurrentProjectInterviews();
@@ -900,6 +962,7 @@ async function addFiles(files, options = {}) {
       uploadProgress: 1,
       selected: true
     };
+    forgetDeletedInterview(item);
     state.allInterviews.push(item);
     state.interviews.push(item);
     added += 1;
@@ -1788,6 +1851,7 @@ $("#clearFiles").addEventListener("click", async () => {
     : `确定删除选中的 ${selected.length} 份资料吗？此操作会同步删除服务端保存的原始文件。`;
   if (!confirm(message)) return;
   for (const item of selected) {
+    rememberDeletedInterview(item);
     if (item.serverId) {
       await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}`, { method: "DELETE" }).catch(() => {});
     }
