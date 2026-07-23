@@ -54,6 +54,48 @@ function saveBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+async function pollConversionJob(jobId, onProgress = () => {}) {
+  let transientFailures = 0;
+  for (;;) {
+    await delay(2500);
+    let response;
+    let job;
+    try {
+      response = await fetch(`${API_BASE}/api/media/convert-audio/jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+      job = await response.json().catch(() => ({}));
+    } catch (error) {
+      transientFailures += 1;
+      onProgress({ status: "running", message: `读取转换进度时短暂中断，正在自动重试 ${transientFailures}/8`, progress: 0 });
+      if (transientFailures < 8) continue;
+      throw error;
+    }
+    if (!response.ok) {
+      transientFailures += response.status >= 500 ? 1 : 8;
+      if (transientFailures < 8) {
+        onProgress({ status: "running", message: `服务器正在恢复转换任务，自动重试 ${transientFailures}/8`, progress: 0 });
+        continue;
+      }
+      throw new Error(job.error || "无法读取转换进度");
+    }
+    transientFailures = 0;
+    onProgress(job);
+    if (job.status === "completed") return job;
+    if (job.status === "failed") throw new Error(job.error || "转换失败，请确认视频文件可播放且包含音轨");
+  }
+}
+
+async function downloadConversionResult(job) {
+  const response = await fetch(`${API_BASE}${job.downloadUrl}`, { cache: "no-store" });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "下载转换后的音频失败");
+  }
+  const blob = await response.blob();
+  const outputName = filenameFromDisposition(response.headers.get("Content-Disposition"), job.outputName || "interview-audio.m4a");
+  saveBlob(blob, outputName);
+  return { outputName, blob };
+}
+
 async function convertVideoToAudio(file) {
   const status = $("#convertAudioStatus");
   const button = $("#convertAudioButton");
@@ -64,11 +106,11 @@ async function convertVideoToAudio(file) {
   let seconds = 0;
   const tick = setInterval(() => {
     seconds += 1;
-    status.textContent = `正在提取音轨并压缩为 M4A · 已等待 ${formatDuration(seconds)}`;
+    status.textContent = `正在上传视频并创建音频转换任务 · 已等待 ${formatDuration(seconds)}`;
   }, 1000);
-  status.textContent = `正在上传并转换：${file.name}`;
+  status.textContent = `正在上传并创建转换任务：${file.name}`;
   try {
-    const response = await fetch(`${API_BASE}/api/media/convert-audio`, {
+    const startResponse = await fetch(`${API_BASE}/api/media/convert-audio/jobs`, {
       method: "POST",
       headers: {
         "Content-Type": file.type || "application/octet-stream",
@@ -76,29 +118,80 @@ async function convertVideoToAudio(file) {
       },
       body: file
     });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      throw new Error(data.error || "转换失败");
-    }
-    const blob = await response.blob();
-    const fallbackName = `${file.name.replace(/\.[^.]+$/, "") || "interview-audio"}.m4a`;
-    const outputName = filenameFromDisposition(response.headers.get("Content-Disposition"), fallbackName);
-    const originalSize = Number(response.headers.get("X-Original-Size"));
-    const convertedSize = Number(response.headers.get("X-Converted-Size"));
-    saveBlob(blob, outputName);
-    const sizeText = Number.isFinite(originalSize) && Number.isFinite(convertedSize)
-      ? `已生成 ${formatFileSize(convertedSize)}，原视频 ${formatFileSize(originalSize)}`
+    const started = await startResponse.json().catch(() => ({}));
+    if (!startResponse.ok) throw new Error(started.error || `上传失败（HTTP ${startResponse.status}）`);
+    clearInterval(tick);
+    status.textContent = started.message || "视频已上传，正在提取音轨";
+    const job = await pollConversionJob(started.id, (job) => {
+      const progressText = Number.isFinite(job.progress) && job.progress ? ` · ${job.progress}%` : "";
+      status.textContent = `${job.message || "正在转换"}${progressText}`;
+    });
+    await downloadConversionResult(job);
+    const sizeText = Number.isFinite(job.originalSize) && Number.isFinite(job.convertedSize)
+      ? `已生成 ${formatFileSize(job.convertedSize)}，原视频 ${formatFileSize(job.originalSize)}`
       : "M4A 已生成并下载";
     status.textContent = `${sizeText}；请将下载的 M4A 上传到上方资料区转录。`;
     toast("音频预处理完成，M4A 已开始下载");
   } catch (error) {
     status.textContent = `转换失败：${error.message}`;
-    toast(`视频转音频失败：${error.message}`, 6000);
+    toast(`视频转音频失败：${error.message}`, 7000);
   } finally {
     clearInterval(tick);
     button.disabled = false;
     $("#convertFileInput").value = "";
   }
+}
+
+function isVideoInterview(item) {
+  return /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(item.name || item.fileName || "") || /^video\//i.test(item.mimeType || item.file?.type || "");
+}
+
+async function convertInterviewAudio(index) {
+  const item = state.interviews[index];
+  if (!item) return;
+  const health = await checkHealth();
+  if (!health) return toast("请先启动 MedVoice 服务");
+  item.error = "";
+  item.progressText = item.serverId ? "正在从账号资料库读取视频并创建 M4A 转换任务" : "正在上传视频并创建 M4A 转换任务";
+  item.status = "音频预处理中";
+  renderTranscripts();
+  try {
+    let response;
+    if (item.serverId) {
+      response = await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}/convert-audio/jobs`, { method: "POST" });
+    } else if (item.file) {
+      response = await fetch(`${API_BASE}/api/media/convert-audio/jobs`, {
+        method: "POST",
+        headers: {
+          "Content-Type": item.file.type || "application/octet-stream",
+          "X-Filename": encodeURIComponent(item.file.name)
+        },
+        body: item.file
+      });
+    } else {
+      throw new Error("没有可转换的原始文件，请重新上传视频");
+    }
+    const started = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(started.error || `创建转换任务失败（HTTP ${response.status}）`);
+    item.progressText = started.message || "转换任务已创建，正在提取音轨";
+    renderTranscripts();
+    const job = await pollConversionJob(started.id, (job) => {
+      const progressText = Number.isFinite(job.progress) && job.progress ? ` · ${job.progress}%` : "";
+      item.progressText = `${job.message || "正在转换"}${progressText}`;
+      renderTranscripts();
+    });
+    await downloadConversionResult(job);
+    item.status = item.text ? "已转录" : "待转录";
+    item.progressText = `M4A 已生成并开始下载（${formatFileSize(job.convertedSize || 0)}）；请将该 M4A 上传后转录。`;
+    toast(`${item.id} 的 M4A 已生成并下载`);
+  } catch (error) {
+    item.status = "转换失败";
+    item.progressText = "转换错误已保留，可点击“生成 M4A”重试";
+    item.error = error.message;
+    toast(`转换失败：${error.message}`, 7000);
+  }
+  await persistInterview(index);
+  renderAll();
 }
 
 function validView(view) {
@@ -546,8 +639,9 @@ function renderTranscripts() {
   } else {
     table.innerHTML = state.interviews.map((item, index) => {
       const isMedia = (item.file || item.hasFile) && !/\.(txt|md|csv|json)$/i.test(item.name);
+      const canConvertAudio = isMedia && isVideoInterview(item);
       const actionLabel = isMedia ? (item.text ? "重新转录" : item.status === "转录失败" ? "重试" : "转录") : "无需转录";
-      const statusClass = item.status.includes("中") ? "processing" : item.status === "转录失败" ? "failed" : item.status === "录音已保存" ? "saved" : "";
+      const statusClass = item.status.includes("中") || item.status.includes("预处理") ? "processing" : item.status === "转录失败" || item.status === "转换失败" ? "failed" : item.status === "录音已保存" ? "saved" : "";
       const sourceLabel = item.source === "实时录音" ? `实时录音${item.recordedAt ? ` · ${escapeHTML(item.recordedAt)}` : ""}` : "上传文件";
       const fileSize = item.file?.size || item.fileSize || 0;
       return `<tr>
@@ -556,7 +650,7 @@ function renderTranscripts() {
         <td><select class="type-select" data-index="${index}" aria-label="受访者类型"><option value="HCP" ${item.type === "HCP" ? "selected" : ""}>HCP</option><option value="患者" ${item.type === "患者" ? "selected" : ""}>患者</option></select></td>
         <td>${escapeHTML(item.duration)}</td>
         <td><span class="status-pill ${statusClass}">${escapeHTML(item.status)}</span>${item.progressText ? `<small class="transcript-progress">${escapeHTML(item.progressText)}</small>` : ""}</td>
-        <td><button class="transcribe-button ${item.status === "转录失败" ? "retry" : ""}" data-index="${index}" ${isMedia ? "" : "disabled"}>${actionLabel}</button></td>
+        <td><div class="row-actions"><button class="transcribe-button ${item.status === "转录失败" ? "retry" : ""}" data-index="${index}" ${isMedia ? "" : "disabled"}>${actionLabel}</button>${canConvertAudio ? `<button class="convert-row-button" data-index="${index}">生成 M4A</button>` : ""}</div></td>
       </tr>`;
     }).join("");
   }
@@ -567,6 +661,7 @@ function renderTranscripts() {
   $$(".row-check").forEach((checkbox) => checkbox.addEventListener("change", () => { state.interviews[+checkbox.dataset.index].selected = checkbox.checked; renderReadiness(); renderRoleMapper(); }));
   $$(".type-select").forEach((select) => select.addEventListener("change", async () => { const item = state.interviews[+select.dataset.index]; item.type = select.value; item.roleResult = null; renderAll(); await persistInterview(+select.dataset.index); }));
   $$(".transcribe-button").forEach((button) => button.addEventListener("click", () => transcribeInterview(+button.dataset.index)));
+  $$(".convert-row-button").forEach((button) => button.addEventListener("click", () => convertInterviewAudio(+button.dataset.index)));
 }
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));

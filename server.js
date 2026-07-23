@@ -607,35 +607,141 @@ async function handleAnalyze(req, res) {
 }
 
 
-async function handleConvertAudio(req, res) {
+const CONVERSION_JOB_TTL_MS = 2 * 60 * 60 * 1000;
+const conversionJobs = new Map();
+
+function cleanupConversionJobs() {
+  const now = Date.now();
+  for (const [id, job] of conversionJobs.entries()) {
+    if (now - job.updatedAt > CONVERSION_JOB_TTL_MS) {
+      if (job.removeSource) unlink(job.sourcePath).catch(() => {});
+      if (job.audioPath) unlink(job.audioPath).catch(() => {});
+      conversionJobs.delete(id);
+    }
+  }
+}
+
+function outputAudioName(originalName) {
+  const cleanBase = basename(originalName || "interview-video", extname(originalName || "")).replace(/[\r\n"]/g, "").slice(0, 180) || "interview-audio";
+  return `${cleanBase}.m4a`;
+}
+
+function publicConversionJob(job) {
+  return {
+    id: job.id,
+    status: job.status,
+    stage: job.stage,
+    progress: job.progress,
+    message: job.message,
+    originalName: job.originalName,
+    outputName: job.outputName,
+    originalSize: job.originalSize,
+    convertedSize: job.convertedSize,
+    downloadUrl: job.status === "completed" ? `/api/media/convert-audio/jobs/${job.id}/download` : undefined,
+    error: job.status === "failed" ? job.error : undefined,
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt
+  };
+}
+
+function updateConversionJob(id, patch) {
+  const job = conversionJobs.get(id);
+  if (!job) return;
+  Object.assign(job, patch, { updatedAt: Date.now() });
+}
+
+async function runConversionJob(jobId) {
+  const job = conversionJobs.get(jobId);
+  if (!job) return;
+  try {
+    updateConversionJob(jobId, { status: "running", stage: "converting", progress: 20, message: "正在提取音轨并压缩为 M4A" });
+    await convertMediaToCompactM4a(job.sourcePath, job.audioPath);
+    const info = await stat(job.audioPath);
+    updateConversionJob(jobId, { status: "completed", stage: "completed", progress: 100, message: "M4A 已生成，可下载后上传转录", convertedSize: info.size });
+  } catch (error) {
+    if (job.removeSource) await unlink(job.sourcePath).catch(() => {});
+    await unlink(job.audioPath).catch(() => {});
+    updateConversionJob(jobId, { status: "failed", stage: "failed", progress: 100, message: "转换失败", error: error.stderr || error.message || "请确认视频文件可播放且包含音轨" });
+  }
+}
+
+async function createConversionJob({ req, res, sourcePath, originalName, originalSize, removeSource }) {
+  cleanupConversionJobs();
+  const id = randomUUID();
+  const audioPath = join(JOB_DIR, `medvoice-convert-audio-${id}.m4a`);
+  const job = {
+    id,
+    userId: req.user?.id,
+    status: "queued",
+    stage: "queued",
+    progress: 5,
+    message: "视频文件已接收，正在准备转换任务",
+    sourcePath,
+    audioPath,
+    removeSource,
+    originalName,
+    outputName: outputAudioName(originalName),
+    originalSize,
+    convertedSize: 0,
+    startedAt: Date.now(),
+    updatedAt: Date.now()
+  };
+  conversionJobs.set(id, job);
+  runConversionJob(id);
+  return json(res, 202, publicConversionJob(job));
+}
+
+async function handleConvertAudioJobStart(req, res) {
   let originalName = "interview-video.mp4";
   try {
     originalName = decodeURIComponent(String(req.headers["x-filename"] || originalName));
   } catch {}
-  const jobId = randomUUID();
-  const sourcePath = join(JOB_DIR, `medvoice-convert-source-${jobId}${safeUploadSuffix(originalName)}`);
-  const audioPath = join(JOB_DIR, `medvoice-convert-audio-${jobId}.m4a`);
+  const id = randomUUID();
+  const sourcePath = join(JOB_DIR, `medvoice-convert-source-${id}${safeUploadSuffix(originalName)}`);
   try {
     const originalSize = await streamUploadToFile(req, sourcePath);
-    await convertMediaToCompactM4a(sourcePath, audioPath);
-    const info = await stat(audioPath);
-    const cleanBase = basename(originalName, extname(originalName)).replace(/[\r\n"]/g, "").slice(0, 180) || "interview-audio";
-    res.writeHead(200, {
-      "Content-Type": "audio/mp4",
-      "Content-Length": info.size,
-      "Content-Disposition": `attachment; filename="${encodeURIComponent(`${cleanBase}.m4a`)}"`,
-      "X-Original-Size": String(originalSize),
-      "X-Converted-Size": String(info.size),
-      "Cache-Control": "no-store"
-    });
-    const stream = createReadStream(audioPath);
-    stream.on("close", () => Promise.all([sourcePath, audioPath].map((path) => unlink(path).catch(() => {}))));
-    stream.on("error", () => Promise.all([sourcePath, audioPath].map((path) => unlink(path).catch(() => {}))));
-    return stream.pipe(res);
+    return createConversionJob({ req, res, sourcePath, originalName, originalSize, removeSource: true });
   } catch (error) {
-    await Promise.all([sourcePath, audioPath].map((path) => unlink(path).catch(() => {})));
-    throw new Error(`视频转音频失败：${error.message || "请确认文件可播放"}`);
+    await unlink(sourcePath).catch(() => {});
+    throw new Error(`视频上传失败：${error.message || "请检查文件大小或网络连接"}`);
   }
+}
+
+async function handleStoredConvertAudioJobStart(req, res, userId, itemId) {
+  const item = await libraryStore.getItem(userId, itemId);
+  if (!item?.storagePath) return json(res, 404, { error: "没有找到该账号下的原始文件" });
+  const fileInfo = await stat(item.storagePath).catch(() => null);
+  if (!fileInfo?.isFile()) return json(res, 404, { error: "原始文件已不在服务端，请重新上传" });
+  return createConversionJob({ req, res, sourcePath: item.storagePath, originalName: item.fileName || item.name, originalSize: fileInfo.size, removeSource: false });
+}
+
+function handleConvertAudioJobStatus(req, res, id) {
+  cleanupConversionJobs();
+  const job = conversionJobs.get(id);
+  if (!job || (job.userId && req.user?.id && job.userId !== req.user.id)) return json(res, 404, { error: "转换任务不存在或已过期" });
+  return json(res, 200, publicConversionJob(job));
+}
+
+async function handleConvertAudioJobDownload(req, res, id) {
+  cleanupConversionJobs();
+  const job = conversionJobs.get(id);
+  if (!job || (job.userId && req.user?.id && job.userId !== req.user.id)) return json(res, 404, { error: "转换任务不存在或已过期" });
+  if (job.status !== "completed") return json(res, 409, { error: "音频还未生成完成" });
+  const info = await stat(job.audioPath).catch(() => null);
+  if (!info?.isFile()) return json(res, 404, { error: "音频文件已过期，请重新转换" });
+  res.writeHead(200, {
+    "Content-Type": "audio/mp4",
+    "Content-Length": info.size,
+    "Content-Disposition": `attachment; filename="${encodeURIComponent(job.outputName)}"`,
+    "X-Original-Size": String(job.originalSize || 0),
+    "X-Converted-Size": String(info.size),
+    "Cache-Control": "no-store"
+  });
+  return createReadStream(job.audioPath).pipe(res);
+}
+
+async function handleConvertAudio(req, res) {
+  return handleConvertAudioJobStart(req, res);
 }
 
 async function handleTranscribe(req, res) {
@@ -740,10 +846,20 @@ async function convertMediaToM4a(sourcePath, outputPath) {
 }
 
 async function convertMediaToCompactM4a(sourcePath, outputPath) {
-  return execFileAsync(process.env.FFMPEG_BIN || "ffmpeg", [
-    "-hide_banner", "-loglevel", "error", "-y",
-    "-i", sourcePath, "-vn", "-ac", "1", "-c:a", "aac", "-b:a", "64k", outputPath
-  ], { timeout: 60 * 60 * 1000, maxBuffer: 2_000_000 });
+  try {
+    return await execFileAsync(process.env.FFMPEG_BIN || "ffmpeg", [
+      "-hide_banner", "-loglevel", "error", "-y",
+      "-i", sourcePath, "-vn", "-ac", "1", "-c:a", "aac", "-b:a", "64k", outputPath
+    ], { timeout: 60 * 60 * 1000, maxBuffer: 2_000_000 });
+  } catch (error) {
+    if (process.platform !== "darwin") throw error;
+    return execFileAsync("/usr/bin/avconvert", [
+      "--source", sourcePath,
+      "--preset", "PresetAppleM4A",
+      "--output", outputPath,
+      "--replace"
+    ], { timeout: 60 * 60 * 1000, maxBuffer: 2_000_000 });
+  }
 }
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -1096,6 +1212,8 @@ async function handleLibrary(req, res, pathname) {
     });
     return createReadStream(item.storagePath).pipe(res);
   }
+  const convertJobMatch = pathname.match(/^\/api\/library\/items\/([^/]+)\/convert-audio\/jobs$/);
+  if (convertJobMatch && req.method === "POST") return handleStoredConvertAudioJobStart(req, res, user.id, convertJobMatch[1]);
   const transcribeJobMatch = pathname.match(/^\/api\/library\/items\/([^/]+)\/transcribe\/jobs$/);
   if (transcribeJobMatch && req.method === "POST") return handleStoredTranscribeJobStart(req, res, user.id, transcribeJobMatch[1]);
   const transcribeMatch = pathname.match(/^\/api\/library\/items\/([^/]+)\/transcribe$/);
@@ -1207,6 +1325,11 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname.startsWith("/api/library/")) return await handleLibrary(req, res, url.pathname);
     if (req.method === "POST" && url.pathname === "/api/media/convert-audio") return await handleConvertAudio(req, res);
+    if (req.method === "POST" && url.pathname === "/api/media/convert-audio/jobs") return await handleConvertAudioJobStart(req, res);
+    const convertJobDownloadMatch = url.pathname.match(/^\/api\/media\/convert-audio\/jobs\/([^/]+)\/download$/);
+    if (req.method === "GET" && convertJobDownloadMatch) return await handleConvertAudioJobDownload(req, res, convertJobDownloadMatch[1]);
+    const convertJobMatch = url.pathname.match(/^\/api\/media\/convert-audio\/jobs\/([^/]+)$/);
+    if (req.method === "GET" && convertJobMatch) return handleConvertAudioJobStatus(req, res, convertJobMatch[1]);
     if (req.method === "POST" && url.pathname === "/api/transcribe") return await handleTranscribe(req, res);
     if (req.method === "POST" && url.pathname === "/api/transcribe-large/jobs") return await handleLargeTranscribeJobStart(req, res);
     const transcribeJobMatch = url.pathname.match(/^\/api\/transcribe-large\/jobs\/([^/]+)$/);
