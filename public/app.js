@@ -96,52 +96,6 @@ async function downloadConversionResult(job, options = {}) {
   return { outputName, blob };
 }
 
-async function convertVideoToAudio(file) {
-  const status = $("#convertAudioStatus");
-  const button = $("#convertAudioButton");
-  if (!file) return;
-  const health = await checkHealth();
-  if (!health) return toast("请先启动 MedVoice 服务");
-  button.disabled = true;
-  let seconds = 0;
-  const tick = setInterval(() => {
-    seconds += 1;
-    status.textContent = `正在上传视频并创建音频转换任务 · 已等待 ${formatDuration(seconds)}`;
-  }, 1000);
-  status.textContent = `正在上传并创建转换任务：${file.name}`;
-  try {
-    const startResponse = await fetch(`${API_BASE}/api/media/convert-audio/jobs`, {
-      method: "POST",
-      headers: {
-        "Content-Type": file.type || "application/octet-stream",
-        "X-Filename": encodeURIComponent(file.name)
-      },
-      body: file
-    });
-    const started = await startResponse.json().catch(() => ({}));
-    if (!startResponse.ok) throw new Error(started.error || `上传失败（HTTP ${startResponse.status}）`);
-    clearInterval(tick);
-    status.textContent = started.message || "视频已上传，正在提取音轨";
-    const job = await pollConversionJob(started.id, (job) => {
-      const progressText = Number.isFinite(job.progress) && job.progress ? ` · ${job.progress}%` : "";
-      status.textContent = `${job.message || "正在转换"}${progressText}`;
-    });
-    await downloadConversionResult(job);
-    const sizeText = Number.isFinite(job.originalSize) && Number.isFinite(job.convertedSize)
-      ? `已生成 ${formatFileSize(job.convertedSize)}，原视频 ${formatFileSize(job.originalSize)}`
-      : "M4A 已生成并下载";
-    status.textContent = `${sizeText}；请将下载的 M4A 上传到上方资料区转录。`;
-    toast("音频预处理完成，M4A 已开始下载");
-  } catch (error) {
-    status.textContent = `转换失败：${error.message}`;
-    toast(`视频转音频失败：${error.message}`, 7000);
-  } finally {
-    clearInterval(tick);
-    button.disabled = false;
-    $("#convertFileInput").value = "";
-  }
-}
-
 function isVideoInterview(item) {
   return /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(item.name || item.fileName || "") || /^video\//i.test(item.mimeType || item.file?.type || "");
 }
@@ -316,8 +270,30 @@ async function clearApiSettings() {
   }
 }
 
-function nextId() {
-  return `HCP-${String(state.interviews.length + 1).padStart(3, "0")}`;
+function normalizeRespondentType(type) {
+  return type === "Patient" || type === "患者" ? "Patient" : "HCP";
+}
+
+function respondentPrefix(type) {
+  return normalizeRespondentType(type) === "Patient" ? "Patient" : "HCP";
+}
+
+function nextId(type = "HCP") {
+  const prefix = respondentPrefix(type);
+  const count = state.interviews.filter((item) => respondentPrefix(item.type) === prefix).length + 1;
+  return `${prefix}-${String(count).padStart(3, "0")}`;
+}
+
+function renameInterviewForType(item, type) {
+  const prefix = respondentPrefix(type);
+  const currentPrefix = respondentPrefix(item.type);
+  if (prefix === currentPrefix && String(item.id || "").startsWith(`${prefix}-`)) {
+    item.type = normalizeRespondentType(type);
+    return;
+  }
+  const count = state.interviews.filter((candidate) => candidate !== item && respondentPrefix(candidate.type) === prefix).length + 1;
+  item.id = `${prefix}-${String(count).padStart(3, "0")}`;
+  item.type = normalizeRespondentType(type);
 }
 
 function formatDuration(seconds) {
@@ -442,7 +418,7 @@ function itemFromLocalRecord(record) {
     id: meta.clientId || "HCP-001",
     serverId: record.serverId || "",
     name: meta.name || record.fileName || "访谈资料",
-    type: meta.type === "患者" ? "患者" : "HCP",
+    type: normalizeRespondentType(meta.type),
     duration: Number.isFinite(Number(meta.durationSeconds)) ? formatDuration(Number(meta.durationSeconds)) : "—",
     durationSeconds: Number.isFinite(Number(meta.durationSeconds)) ? Number(meta.durationSeconds) : null,
     status: meta.status || "待转录",
@@ -584,7 +560,7 @@ function humanizeTranscriptionError(message = "") {
     return "音视频文件过大，请使用大型文件自动分片转录，或缩短录音后重试。";
   }
   if (/failed to fetch|networkerror|load failed/i.test(message)) {
-    return "网络连接或服务端任务短暂中断，可能是页面刷新、Render 正在部署/重启，或浏览器到服务器连接超时。请等待 1 分钟后点击“重试”；如果仍失败，优先用“视频转音频预处理”生成 M4A 后再上传。";
+    return "网络连接或服务端任务短暂中断，可能是页面刷新、Render 正在部署/重启，或浏览器到服务器连接超时。请等待 1 分钟后点击“重试”；如果仍失败，优先点击列表行内“生成 M4A 并转录”。";
   }
   return message || "未知错误";
 }
@@ -622,9 +598,9 @@ async function addFiles(files, options = {}) {
       : await mediaMetadata(file);
     const index = state.interviews.length;
     state.interviews.push({
-      id: nextId(),
+      id: nextId(options.type),
       name: file.name,
-      type: options.type === "患者" ? "患者" : "HCP",
+      type: normalizeRespondentType(options.type),
       duration: metadata.label,
       durationSeconds: metadata.seconds,
       status: isText ? "可分析" : options.source === "实时录音" ? "录音已保存" : "待转录",
@@ -664,7 +640,7 @@ function renderTranscripts() {
       return `<tr>
         <td><input class="row-check" type="checkbox" data-index="${index}" ${item.selected ? "checked" : ""} aria-label="选择 ${escapeHTML(item.id)}" /></td>
         <td><strong>${escapeHTML(item.id)} · ${escapeHTML(item.name)}</strong><small class="${fileSize > 24 * 1024 * 1024 && !item.text ? "large-file-note" : "file-size-note"}">${item.roleResult ? "已区分角色 · 可导出问答 Word" : item.text ? "已建立逐字稿" : fileSize > 24 * 1024 * 1024 ? `${formatFileSize(fileSize)} · 服务端提取音轨并自动分片` : `${formatFileSize(fileSize)} · 等待语音转录`}${item.persisted ? " · 已保存到账户" : item.localPersisted ? " · 已保存本机备份" : item.persisting ? " · 保存中" : ""}</small><span class="source-badge ${item.source === "实时录音" ? "live" : ""}">${sourceLabel}</span>${item.error ? `<small class="file-error">失败原因：${escapeHTML(item.error)}</small>` : ""}${item.persistError ? `<small class="file-error">保存提示：${escapeHTML(item.persistError)}</small>` : ""}${item.localPersistError ? `<small class="file-error">本机备份提示：${escapeHTML(item.localPersistError)}</small>` : ""}</td>
-        <td><select class="type-select" data-index="${index}" aria-label="受访者类型"><option value="HCP" ${item.type === "HCP" ? "selected" : ""}>HCP</option><option value="患者" ${item.type === "患者" ? "selected" : ""}>患者</option></select></td>
+        <td><select class="type-select" data-index="${index}" aria-label="受访者类型"><option value="HCP" ${normalizeRespondentType(item.type) === "HCP" ? "selected" : ""}>HCP</option><option value="Patient" ${normalizeRespondentType(item.type) === "Patient" ? "selected" : ""}>Patient</option></select></td>
         <td>${escapeHTML(item.duration)}</td>
         <td><span class="status-pill ${statusClass}">${escapeHTML(item.status)}</span>${item.progressText ? `<small class="transcript-progress">${escapeHTML(item.progressText)}</small>` : ""}</td>
         <td><div class="row-actions"><button class="transcribe-button ${item.status === "转录失败" ? "retry" : ""}" data-index="${index}" ${isMedia ? "" : "disabled"}>${actionLabel}</button>${canConvertAudio ? `<button class="convert-row-button" data-index="${index}">生成 M4A 并转录</button>` : ""}</div></td>
@@ -676,7 +652,14 @@ function renderTranscripts() {
   $("#navCount").textContent = state.interviews.length;
   $("#masterCheck").checked = state.interviews.length > 0 && state.interviews.every((item) => item.selected);
   $$(".row-check").forEach((checkbox) => checkbox.addEventListener("change", () => { state.interviews[+checkbox.dataset.index].selected = checkbox.checked; renderReadiness(); renderRoleMapper(); }));
-  $$(".type-select").forEach((select) => select.addEventListener("change", async () => { const item = state.interviews[+select.dataset.index]; item.type = select.value; item.roleResult = null; renderAll(); await persistInterview(+select.dataset.index); }));
+  $$(".type-select").forEach((select) => select.addEventListener("change", async () => {
+    const index = +select.dataset.index;
+    const item = state.interviews[index];
+    renameInterviewForType(item, select.value);
+    item.roleResult = null;
+    renderAll();
+    await persistInterview(index);
+  }));
   $$(".transcribe-button").forEach((button) => button.addEventListener("click", () => transcribeInterview(+button.dataset.index)));
   $$(".convert-row-button").forEach((button) => button.addEventListener("click", () => convertInterviewAudio(+button.dataset.index)));
 }
@@ -684,7 +667,7 @@ function renderTranscripts() {
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function selectedTranscriptionMode() {
-  return $("#fastTranscriptionMode")?.checked ? "fast" : "diarize";
+  return "fast";
 }
 
 function estimatedChunkCount(item) {
@@ -1002,10 +985,10 @@ function renderOverview() {
   const report = state.report;
   const selectedCount = state.interviews.length;
   const transcribed = state.interviews.filter((item) => item.text).length;
-  const hcpCount = state.interviews.filter((item) => item.type === "HCP").length;
-  const patientCount = selectedCount - hcpCount;
+  const hcpCount = state.interviews.filter((item) => normalizeRespondentType(item.type) === "HCP").length;
+  const patientCount = state.interviews.filter((item) => normalizeRespondentType(item.type) === "Patient").length;
   $("#metricInterviews").innerHTML = `${state.matrix.length || 0} <em>份</em>`;
-  $("#metricTypes").textContent = selectedCount ? `${hcpCount} HCP${patientCount ? ` · ${patientCount} 患者` : ""}` : "等待导入资料";
+  $("#metricTypes").textContent = selectedCount ? `${hcpCount} HCP${patientCount ? ` · ${patientCount} Patient` : ""}` : "等待导入资料";
   $("#metricTranscribed").innerHTML = `${transcribed} <em>份</em>`;
   $("#metricQuestions").innerHTML = `${state.questions.length}<em>题</em>`;
   $("#metricInsights").innerHTML = `${report?.top_insights?.length || 0} <em>项</em>`;
@@ -1341,8 +1324,6 @@ $("#browseButton").addEventListener("click", (event) => { event.stopPropagation(
 $("#uploadZone").addEventListener("click", (event) => { if (!event.target.closest("button")) $("#fileInput").click(); });
 $("#uploadZone").addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") $("#fileInput").click(); });
 $("#fileInput").addEventListener("change", (event) => addFiles([...event.target.files]));
-$("#convertAudioButton").addEventListener("click", () => $("#convertFileInput").click());
-$("#convertFileInput").addEventListener("change", (event) => convertVideoToAudio(event.target.files[0]));
 ["dragenter", "dragover"].forEach((name) => $("#uploadZone").addEventListener(name, (event) => { event.preventDefault(); $("#uploadZone").classList.add("dragging"); }));
 ["dragleave", "drop"].forEach((name) => $("#uploadZone").addEventListener(name, (event) => { event.preventDefault(); $("#uploadZone").classList.remove("dragging"); }));
 $("#uploadZone").addEventListener("drop", (event) => addFiles([...event.dataTransfer.files]));

@@ -286,7 +286,7 @@ async function identifyDocumentRoles(document) {
   for (let index = 0; index < turns.length; index += batchSize) batches.push(turns.slice(index, index + batchSize));
   const batchResults = await runWithConcurrency(batches, Math.min(3, MAX_CONCURRENCY), (batch) => identifyRoleBatch(document, batch));
   const assignments = batchResults.flatMap((result) => result.assignments || []);
-  const structured = buildRoleExchanges(turns, assignments, document.type === "患者" ? "患者/受访者" : "HCP/受访者");
+  const structured = buildRoleExchanges(turns, assignments, ["患者", "Patient"].includes(document.type) ? "Patient/受访者" : "HCP/受访者");
   return {
     document_id: document.id,
     name: document.name,
@@ -584,7 +584,7 @@ async function handleIdentifyRoles(req, res) {
     return {
       id: String(document.id || `INT-${index + 1}`).slice(0, 80),
       name: String(document.name || `访谈 ${index + 1}`).slice(0, 160),
-      type: document.type === "患者" ? "患者" : "HCP",
+      type: ["患者", "Patient"].includes(document.type) ? "Patient" : "HCP",
       text
     };
   });

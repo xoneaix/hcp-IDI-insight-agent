@@ -111,21 +111,11 @@
             <p>MP3 · WAV · MP4 · M4A · TXT · MD · CSV</p>
             <div><button class="secondary-button" id="browseButton">选择文件</button><button class="record-button" id="recordButton"><span>●</span> 实时录音</button></div>
           </div>
-          <div class="transcription-mode-panel">
-            <label class="fast-transcription-toggle"><input id="fastTranscriptionMode" type="checkbox" checked /> <span>快速转录模式</span></label>
-            <p>推荐用于 MP4 / MOV / WebM 等 60 分钟以上访谈视频：优先提取音轨、分片转文字，完成后再用“区分对话角色”整理问答；若需原生说话人分离，可关闭此模式。</p>
-          </div>
-          <div class="media-converter-panel">
-            <input id="convertFileInput" type="file" accept="video/*,.mp4,.mov,.m4v,.webm" hidden />
-            <div><span>♫</span><div><strong>视频转音频预处理</strong><small>将视频文件提取为轻量 M4A 后再上传转录，可显著提升长访谈处理速度。</small></div></div>
-            <button class="secondary-button" id="convertAudioButton">选择视频并生成 M4A</button>
-            <small id="convertAudioStatus">不会消耗 AI 额度；列表行内“生成 M4A 并转录”会自动导入轻量音频并开始转录。</small>
-          </div>
           <div class="recording-console" id="recordingConsole" hidden>
             <div class="recording-state"><span class="recording-pulse"></span><div><strong id="recordingStatus">准备录音</strong><small>录音文件将保留在当前浏览器会话中</small></div></div>
             <div class="recording-options">
               <div class="language-select"><label for="recordLanguage">实时预览语言</label><select id="recordLanguage"><option value="zh-CN">中文</option><option value="en-US">English</option></select><small>正式转录自动识别中英文</small></div>
-              <div class="language-select"><label for="recordRespondentType">受访者类型</label><select id="recordRespondentType"><option value="HCP">HCP</option><option value="患者">患者</option></select><small>保存后仍可在列表中修改</small></div>
+              <div class="language-select"><label for="recordRespondentType">受访者类型</label><select id="recordRespondentType"><option value="HCP">HCP</option><option value="Patient">Patient</option></select><small>保存后仍可在列表中修改</small></div>
               <label class="auto-transcribe"><input id="autoTranscribeRecording" type="checkbox" checked /> 停止保存后自动转录</label>
             </div>
             <div class="recording-time" id="recordingTime">00:00</div>
@@ -138,7 +128,7 @@
           </article>
           <article class="panel role-mapper-panel">
             <div class="role-mapper-head">
-              <div><div class="eyebrow">SEMANTIC ROLE MAPPER</div><h2>区分对话角色</h2><p>基于说话人线索和上下文语义，将转录原话整理为“访谈员提问 × HCP / 患者回答”；不改写原话，低置信内容自动标记待复核。</p></div>
+              <div><div class="eyebrow">SEMANTIC ROLE MAPPER</div><h2>区分对话角色</h2><p>基于说话人线索和上下文语义，将转录原话整理为“访谈员提问 × HCP / Patient 回答”；不改写原话，低置信内容自动标记待复核。</p></div>
               <div class="role-actions"><button class="secondary-button" id="exportRoleWord" disabled>导出问答 Word ↗</button><button class="primary-button" id="identifyRoles" disabled><span>✦</span> 区分所选访谈角色</button></div>
             </div>
             <div class="role-flow">
