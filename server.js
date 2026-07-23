@@ -1,7 +1,7 @@
 import http from "node:http";
 import { createReadStream, createWriteStream } from "node:fs";
 import { access, mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
-import { dirname, extname, join, normalize, sep } from "node:path";
+import { basename, dirname, extname, join, normalize, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -606,6 +606,38 @@ async function handleAnalyze(req, res) {
   json(res, 200, { report, analyses, matrix, questions: payload.questions, models: { map: MAP_MODEL, synthesis: SYNTHESIS_MODEL } });
 }
 
+
+async function handleConvertAudio(req, res) {
+  let originalName = "interview-video.mp4";
+  try {
+    originalName = decodeURIComponent(String(req.headers["x-filename"] || originalName));
+  } catch {}
+  const jobId = randomUUID();
+  const sourcePath = join(JOB_DIR, `medvoice-convert-source-${jobId}${safeUploadSuffix(originalName)}`);
+  const audioPath = join(JOB_DIR, `medvoice-convert-audio-${jobId}.m4a`);
+  try {
+    const originalSize = await streamUploadToFile(req, sourcePath);
+    await convertMediaToCompactM4a(sourcePath, audioPath);
+    const info = await stat(audioPath);
+    const cleanBase = basename(originalName, extname(originalName)).replace(/[\r\n"]/g, "").slice(0, 180) || "interview-audio";
+    res.writeHead(200, {
+      "Content-Type": "audio/mp4",
+      "Content-Length": info.size,
+      "Content-Disposition": `attachment; filename="${encodeURIComponent(`${cleanBase}.m4a`)}"`,
+      "X-Original-Size": String(originalSize),
+      "X-Converted-Size": String(info.size),
+      "Cache-Control": "no-store"
+    });
+    const stream = createReadStream(audioPath);
+    stream.on("close", () => Promise.all([sourcePath, audioPath].map((path) => unlink(path).catch(() => {}))));
+    stream.on("error", () => Promise.all([sourcePath, audioPath].map((path) => unlink(path).catch(() => {}))));
+    return stream.pipe(res);
+  } catch (error) {
+    await Promise.all([sourcePath, audioPath].map((path) => unlink(path).catch(() => {})));
+    throw new Error(`视频转音频失败：${error.message || "请确认文件可播放"}`);
+  }
+}
+
 async function handleTranscribe(req, res) {
   if (!API_KEY) return json(res, 503, { error: "尚未连接 AI 服务；请在页面右上角完成临时 API Key 配置。" });
   const raw = await readRaw(req, 27_000_000);
@@ -705,6 +737,13 @@ async function convertMediaToM4a(sourcePath, outputPath) {
     "-hide_banner", "-loglevel", "error", "-y",
     "-i", sourcePath, "-vn", "-c:a", "aac", "-b:a", "96k", outputPath
   ], { timeout: 20 * 60 * 1000, maxBuffer: 2_000_000 });
+}
+
+async function convertMediaToCompactM4a(sourcePath, outputPath) {
+  return execFileAsync(process.env.FFMPEG_BIN || "ffmpeg", [
+    "-hide_banner", "-loglevel", "error", "-y",
+    "-i", sourcePath, "-vn", "-ac", "1", "-c:a", "aac", "-b:a", "64k", outputPath
+  ], { timeout: 60 * 60 * 1000, maxBuffer: 2_000_000 });
 }
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -1167,6 +1206,7 @@ const server = http.createServer(async (req, res) => {
       return await handleSettings(req, res);
     }
     if (url.pathname.startsWith("/api/library/")) return await handleLibrary(req, res, url.pathname);
+    if (req.method === "POST" && url.pathname === "/api/media/convert-audio") return await handleConvertAudio(req, res);
     if (req.method === "POST" && url.pathname === "/api/transcribe") return await handleTranscribe(req, res);
     if (req.method === "POST" && url.pathname === "/api/transcribe-large/jobs") return await handleLargeTranscribeJobStart(req, res);
     const transcribeJobMatch = url.pathname.match(/^\/api\/transcribe-large\/jobs\/([^/]+)$/);

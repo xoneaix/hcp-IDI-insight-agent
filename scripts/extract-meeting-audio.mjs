@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 function usage() {
-  console.log(`腾讯会议 MP4 音频提取工具\n\n用法：\n  node scripts/extract-meeting-audio.mjs <MP4文件或文件夹...> [--out 输出目录] [--overwrite]\n\n示例：\n  node scripts/extract-meeting-audio.mjs ~/Downloads/访谈.mp4\n  node scripts/extract-meeting-audio.mjs ~/Downloads/腾讯会议访谈 --out ~/Downloads/medvoice-audio\n\n输出：单声道 64kbps .m4a，适合上传到 MedVoice 做转录。`);
+  console.log(`通用 MP4 音频提取工具\n\n用法：\n  node scripts/extract-meeting-audio.mjs <MP4文件或文件夹...> [--out 输出目录] [--overwrite]\n\n示例：\n  node scripts/extract-meeting-audio.mjs ~/Downloads/访谈.mp4\n  node scripts/extract-meeting-audio.mjs ~/Downloads/访谈视频文件夹 --out ~/Downloads/medvoice-audio\n\n输出：单声道 64kbps .m4a，适合上传到 MedVoice 做转录。`);
 }
 
 const args = process.argv.slice(2);

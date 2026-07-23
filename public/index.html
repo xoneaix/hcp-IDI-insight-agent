@@ -113,7 +113,13 @@
           </div>
           <div class="transcription-mode-panel">
             <label class="fast-transcription-toggle"><input id="fastTranscriptionMode" type="checkbox" checked /> <span>快速转录模式</span></label>
-            <p>推荐用于腾讯会议 MP4 / 60 分钟以上访谈：优先提取音轨、分片转文字，完成后再用“区分对话角色”整理问答；若需原生说话人分离，可关闭此模式。</p>
+            <p>推荐用于 MP4 / MOV / WebM 等 60 分钟以上访谈视频：优先提取音轨、分片转文字，完成后再用“区分对话角色”整理问答；若需原生说话人分离，可关闭此模式。</p>
+          </div>
+          <div class="media-converter-panel">
+            <input id="convertFileInput" type="file" accept="video/*,.mp4,.mov,.m4v,.webm" hidden />
+            <div><span>♫</span><div><strong>视频转音频预处理</strong><small>将视频文件提取为轻量 M4A 后再上传转录，可显著提升长访谈处理速度。</small></div></div>
+            <button class="secondary-button" id="convertAudioButton">选择视频并生成 M4A</button>
+            <small id="convertAudioStatus">不会消耗 AI 额度；转换完成后会自动下载音频文件。</small>
           </div>
           <div class="recording-console" id="recordingConsole" hidden>
             <div class="recording-state"><span class="recording-pulse"></span><div><strong id="recordingStatus">准备录音</strong><small>录音文件将保留在当前浏览器会话中</small></div></div>

@@ -51,19 +51,19 @@ export OPENAI_API_KEY="你的密钥"
 真实模式使用 `gpt-4o-transcribe-diarize` 的 `diarized_json` 完成说话人分段，并通过 Responses API 的 Structured Outputs 生成稳定的结构化结果。参考：[说话人分离转录](https://developers.openai.com/api/docs/guides/speech-to-text#speaker-diarization)、[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)、[GPT-5.5 指南](https://developers.openai.com/api/docs/guides/latest-model)。
 
 
-## 腾讯会议 MP4 快速转录建议
+## MP4 / 视频文件快速转录建议
 
-腾讯会议导出的 `.mp4` 往往包含大量画面数据，而转录只需要音轨。正式演示或批量处理前，建议先把 MP4 提取成单声道 64kbps 的 `.m4a`，通常可把 300MB 级视频压到几十 MB，上传、分片和转录都会更快。
+各类会议、访谈或录屏平台导出的 `.mp4` 往往包含大量画面数据，而转录只需要音轨。正式演示或批量处理前，建议先在页面使用“视频转音频预处理”，或用脚本把 MP4 提取成单声道 64kbps 的 `.m4a`，通常可把 300MB 级视频压到几十 MB，上传、分片和转录都会更快。
 
 ```bash
 cd "/Users/nielun/Documents/Codex OneAI/hcp-insight-agent"
-"/Users/nielun/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node" scripts/extract-meeting-audio.mjs "/Users/nielun/Downloads/腾讯会议访谈.mp4"
+"/Users/nielun/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node" scripts/extract-meeting-audio.mjs "/Users/nielun/Downloads/访谈视频.mp4"
 ```
 
 也可以批量处理整个文件夹：
 
 ```bash
-"/Users/nielun/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node" scripts/extract-meeting-audio.mjs "/Users/nielun/Downloads/腾讯会议访谈" --out "/Users/nielun/Downloads/MedVoice音频"
+"/Users/nielun/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node" scripts/extract-meeting-audio.mjs "/Users/nielun/Downloads/访谈视频文件夹" --out "/Users/nielun/Downloads/MedVoice预处理音频"
 ```
 
 页面中已新增“快速转录模式”：适合长 MP4 或比赛现场演示，优先完成逐字稿；如需更细的原生说话人分离，可关闭快速模式后再转录。

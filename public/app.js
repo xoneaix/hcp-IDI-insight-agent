@@ -37,6 +37,70 @@ function toast(message, duration = 2600) {
   toast.timer = setTimeout(() => element.classList.remove("show"), duration);
 }
 
+function filenameFromDisposition(disposition, fallback) {
+  const encoded = String(disposition || "").match(/filename="?([^";]+)"?/i)?.[1];
+  if (!encoded) return fallback;
+  try { return decodeURIComponent(encoded); } catch { return encoded; }
+}
+
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function convertVideoToAudio(file) {
+  const status = $("#convertAudioStatus");
+  const button = $("#convertAudioButton");
+  if (!file) return;
+  const health = await checkHealth();
+  if (!health) return toast("请先启动 MedVoice 服务");
+  button.disabled = true;
+  let seconds = 0;
+  const tick = setInterval(() => {
+    seconds += 1;
+    status.textContent = `正在提取音轨并压缩为 M4A · 已等待 ${formatDuration(seconds)}`;
+  }, 1000);
+  status.textContent = `正在上传并转换：${file.name}`;
+  try {
+    const response = await fetch(`${API_BASE}/api/media/convert-audio`, {
+      method: "POST",
+      headers: {
+        "Content-Type": file.type || "application/octet-stream",
+        "X-Filename": encodeURIComponent(file.name)
+      },
+      body: file
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || "转换失败");
+    }
+    const blob = await response.blob();
+    const fallbackName = `${file.name.replace(/\.[^.]+$/, "") || "interview-audio"}.m4a`;
+    const outputName = filenameFromDisposition(response.headers.get("Content-Disposition"), fallbackName);
+    const originalSize = Number(response.headers.get("X-Original-Size"));
+    const convertedSize = Number(response.headers.get("X-Converted-Size"));
+    saveBlob(blob, outputName);
+    const sizeText = Number.isFinite(originalSize) && Number.isFinite(convertedSize)
+      ? `已生成 ${formatFileSize(convertedSize)}，原视频 ${formatFileSize(originalSize)}`
+      : "M4A 已生成并下载";
+    status.textContent = `${sizeText}；请将下载的 M4A 上传到上方资料区转录。`;
+    toast("音频预处理完成，M4A 已开始下载");
+  } catch (error) {
+    status.textContent = `转换失败：${error.message}`;
+    toast(`视频转音频失败：${error.message}`, 6000);
+  } finally {
+    clearInterval(tick);
+    button.disabled = false;
+    $("#convertFileInput").value = "";
+  }
+}
+
 function validView(view) {
   return ["overview", "transcripts", "outline", "matrix", "report"].includes(view) ? view : "overview";
 }
@@ -1136,6 +1200,8 @@ $("#browseButton").addEventListener("click", (event) => { event.stopPropagation(
 $("#uploadZone").addEventListener("click", (event) => { if (!event.target.closest("button")) $("#fileInput").click(); });
 $("#uploadZone").addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") $("#fileInput").click(); });
 $("#fileInput").addEventListener("change", (event) => addFiles([...event.target.files]));
+$("#convertAudioButton").addEventListener("click", () => $("#convertFileInput").click());
+$("#convertFileInput").addEventListener("change", (event) => convertVideoToAudio(event.target.files[0]));
 ["dragenter", "dragover"].forEach((name) => $("#uploadZone").addEventListener(name, (event) => { event.preventDefault(); $("#uploadZone").classList.add("dragging"); }));
 ["dragleave", "drop"].forEach((name) => $("#uploadZone").addEventListener(name, (event) => { event.preventDefault(); $("#uploadZone").classList.remove("dragging"); }));
 $("#uploadZone").addEventListener("drop", (event) => addFiles([...event.dataTransfer.files]));
