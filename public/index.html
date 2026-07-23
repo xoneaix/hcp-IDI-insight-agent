@@ -14,13 +14,15 @@
     <div class="app-shell">
       <aside class="sidebar">
         <a class="brand" href="#" aria-label="MedVoice 首页">
-          <span class="brand-mark">M</span>
+          <span class="brand-mark medvoice-logo" aria-hidden="true"><svg viewBox="0 0 48 48" role="img"><path class="logo-bg" d="M12 5h24c4 0 7 3 7 7v24c0 4-3 7-7 7H12c-4 0-7-3-7-7V12c0-4 3-7 7-7Z"/><path class="logo-m" d="M13 32V16l7 10 7-10v16"/><path class="logo-v" d="M29 17c2 8 4 12 6 12s3-4 4-9"/><path class="logo-wave" d="M10 36h6l3-4 4 8 4-14 4 10h7"/></svg></span>
           <span><strong>MedVoice</strong><small>INSIGHT AGENT</small></span>
         </a>
 
         <div class="project-switcher">
           <small>当前研究项目</small>
-          <button id="projectButton"><span id="projectLabel">未命名访谈项目</span><b>⌄</b></button>
+          <label class="project-select-wrap" aria-label="切换研究项目"><select id="projectSelect"></select></label>
+          <div class="project-mini-actions"><button id="renameProject" type="button">重命名</button><button id="createProject" type="button">＋ 新研究</button></div>
+          <span id="projectLabel" hidden>未命名访谈项目</span>
         </div>
 
         <nav aria-label="主导航">
@@ -52,7 +54,7 @@
             <div class="privacy-badge"><i>◆</i> 合规保护已开启</div>
             <button class="api-connect" id="apiSettingsButton"><i></i><span id="apiSettingsLabel">连接 AI</span></button>
             <button class="secondary-button" id="adminAccess" hidden>Access 管理</button>
-            <button class="primary-button" id="newAnalysis"><span>＋</span> 新建分析</button>
+            <button class="primary-button" id="newAnalysis"><span>＋</span> 新建研究</button>
           </div>
         </header>
 

@@ -1,5 +1,11 @@
+const DEFAULT_PROJECT_ID = "default";
+const DEFAULT_PROJECT_NAME = "未命名访谈项目";
+
 const state = {
-  projectName: "未命名访谈项目",
+  projectName: DEFAULT_PROJECT_NAME,
+  activeProjectId: DEFAULT_PROJECT_ID,
+  projects: [],
+  allInterviews: [],
   interviews: [],
   outlineText: "",
   outlineSource: "",
@@ -23,6 +29,8 @@ const WORKSPACE_URL = location.protocol === "file:" ? "index.html" : "/";
 const ADMIN_URL = location.protocol === "file:" ? "admin.html" : "/admin";
 const LOGIN_URL = location.protocol === "file:" ? `${API_BASE}/login` : "/login";
 const VIEW_STORAGE_KEY = "medvoice.activeView";
+const PROJECTS_STORAGE_KEY = "medvoice.projects";
+const ACTIVE_PROJECT_STORAGE_KEY = "medvoice.activeProject";
 const LARGE_CONVERSION_CHUNK_THRESHOLD = 80 * 1024 * 1024;
 const CONVERSION_CHUNK_SIZE = 8 * 1024 * 1024;
 const LOCAL_DB_NAME = "medvoice-interview-library";
@@ -30,6 +38,108 @@ const LOCAL_DB_VERSION = 1;
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const escapeHTML = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
+
+function safeProjectId(value) {
+  return String(value || DEFAULT_PROJECT_ID).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) || DEFAULT_PROJECT_ID;
+}
+
+function createProjectId() {
+  return `study-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function projectDataKey(projectId = state.activeProjectId) {
+  return `medvoice.projectData.${safeProjectId(projectId)}`;
+}
+
+function currentProject() {
+  return state.projects.find((project) => project.id === state.activeProjectId) || state.projects[0] || { id: DEFAULT_PROJECT_ID, name: DEFAULT_PROJECT_NAME };
+}
+
+function loadProjects() {
+  let parsed = [];
+  try { parsed = JSON.parse(localStorage.getItem(PROJECTS_STORAGE_KEY) || "[]"); } catch {}
+  state.projects = Array.isArray(parsed) && parsed.length
+    ? parsed.map((project) => ({ id: safeProjectId(project.id), name: String(project.name || DEFAULT_PROJECT_NAME).slice(0, 80) }))
+    : [{ id: DEFAULT_PROJECT_ID, name: DEFAULT_PROJECT_NAME }];
+  const active = safeProjectId(localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || state.projects[0].id);
+  state.activeProjectId = state.projects.some((project) => project.id === active) ? active : state.projects[0].id;
+  state.projectName = currentProject().name;
+}
+
+function saveProjects() {
+  localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(state.projects));
+  localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, state.activeProjectId);
+}
+
+function saveCurrentProjectWorkspace() {
+  localStorage.setItem(projectDataKey(), JSON.stringify({
+    outlineText: state.outlineText,
+    outlineSource: state.outlineSource,
+    questions: state.questions,
+    analyses: state.analyses,
+    matrix: state.matrix,
+    report: state.report
+  }));
+}
+
+function loadCurrentProjectWorkspace() {
+  let data = {};
+  try { data = JSON.parse(localStorage.getItem(projectDataKey()) || "{}"); } catch {}
+  state.outlineText = data.outlineText || "";
+  state.outlineSource = data.outlineSource || "";
+  state.questions = Array.isArray(data.questions) ? data.questions : [];
+  state.analyses = Array.isArray(data.analyses) ? data.analyses : [];
+  state.matrix = Array.isArray(data.matrix) ? data.matrix : [];
+  state.report = data.report || null;
+  const outlineInput = $("#outlineInput");
+  if (outlineInput) outlineInput.value = state.outlineText;
+}
+
+function normalizeProjectFields(item = {}) {
+  const id = safeProjectId(item.projectId || item.project_id || DEFAULT_PROJECT_ID);
+  const project = state.projects.find((candidate) => candidate.id === id);
+  return {
+    projectId: id,
+    projectName: String(item.projectName || item.project_name || project?.name || DEFAULT_PROJECT_NAME).slice(0, 80)
+  };
+}
+
+function mergeProjectsFromInterviews(items = state.allInterviews) {
+  const known = new Set(state.projects.map((project) => project.id));
+  for (const item of items) {
+    const project = normalizeProjectFields(item);
+    item.projectId = project.projectId;
+    item.projectName = project.projectName;
+    if (!known.has(project.projectId)) {
+      state.projects.push({ id: project.projectId, name: project.projectName });
+      known.add(project.projectId);
+    }
+  }
+}
+
+function syncCurrentProjectInterviews() {
+  const activeId = safeProjectId(state.activeProjectId);
+  state.interviews = state.allInterviews.filter((item) => safeProjectId(item.projectId || DEFAULT_PROJECT_ID) === activeId);
+}
+
+function setActiveProject(projectId) {
+  saveCurrentProjectWorkspace();
+  state.activeProjectId = safeProjectId(projectId);
+  state.projectName = currentProject().name;
+  saveProjects();
+  loadCurrentProjectWorkspace();
+  syncCurrentProjectInterviews();
+  renderAll();
+  showView(savedView(), { updateHash: false, scroll: false });
+}
+
+function renderProjectSwitcher() {
+  const select = $("#projectSelect");
+  if (!select) return;
+  select.innerHTML = state.projects.map((project) => `<option value="${escapeHTML(project.id)}" ${project.id === state.activeProjectId ? "selected" : ""}>${escapeHTML(project.name)}</option>`).join("");
+  $("#projectLabel").textContent = state.projectName;
+  $("#breadcrumbProject").textContent = state.projectName;
+}
 
 function toast(message, duration = 2600) {
   const element = $("#toast");
@@ -383,6 +493,8 @@ function formatFileSize(bytes) {
 
 function interviewPayload(item) {
   return {
+    projectId: item.projectId || state.activeProjectId,
+    projectName: item.projectName || state.projectName,
     clientId: item.id,
     name: item.name,
     type: normalizeRespondentType(item.type),
@@ -403,7 +515,7 @@ function accountLibraryPrefix() {
 }
 
 function localLibraryKey(item) {
-  return `${accountLibraryPrefix()}${item.serverId || item.id}`;
+  return `${accountLibraryPrefix()}${safeProjectId(item?.projectId || state.activeProjectId)}::${item.serverId || item.id}`;
 }
 
 function openLocalLibrary() {
@@ -487,7 +599,9 @@ async function deleteLocalInterview(item) {
 function itemFromLocalRecord(record) {
   const meta = record.meta || {};
   const file = record.blob ? new File([record.blob], record.fileName || meta.name || "interview.webm", { type: record.mimeType || record.blob.type || "application/octet-stream" }) : null;
+  const project = normalizeProjectFields(meta);
   return {
+    ...project,
     id: meta.clientId || "HCP-001",
     serverId: record.serverId || "",
     name: meta.name || record.fileName || "访谈资料",
@@ -520,6 +634,8 @@ function applyPersistedItem(local, persisted) {
   local.fileName = persisted.fileName || local.name;
   local.fileSize = persisted.fileSize || local.file?.size || 0;
   local.mimeType = persisted.mimeType || local.file?.type || "application/octet-stream";
+  local.projectId = persisted.projectId || local.projectId || state.activeProjectId;
+  local.projectName = persisted.projectName || local.projectName || state.projectName;
   return local;
 }
 
@@ -607,6 +723,7 @@ async function loadInterviewLibrary() {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "资料库加载失败");
     const serverItems = (data.items || []).map((item) => ({
+      ...normalizeProjectFields(item),
       id: item.id,
       serverId: item.serverId,
       name: item.name,
@@ -647,7 +764,10 @@ async function loadInterviewLibrary() {
         byId.set(key, localItem);
       }
     }
-    state.interviews = [...byId.values()];
+    state.allInterviews = [...byId.values()];
+    mergeProjectsFromInterviews();
+    saveProjects();
+    syncCurrentProjectInterviews();
     state.libraryLoaded = true;
     renderAll();
     if (state.interviews.length) toast(`已恢复 ${state.interviews.length} 份账号资料`);
@@ -701,6 +821,8 @@ async function addFiles(files, options = {}) {
     const isText = /\.(txt|md|csv|json)$/i.test(file.name) || file.type.startsWith("text/");
     const index = state.interviews.length;
     const item = {
+      projectId: state.activeProjectId,
+      projectName: state.projectName,
       id: nextId(options.type),
       name: file.name,
       type: normalizeRespondentType(options.type),
@@ -721,6 +843,7 @@ async function addFiles(files, options = {}) {
       uploadProgress: 1,
       selected: true
     };
+    state.allInterviews.push(item);
     state.interviews.push(item);
     added += 1;
     addedIndexes.push(index);
@@ -1140,6 +1263,7 @@ function parseOutlineFromText() {
   state.questions = extractQuestions(state.outlineText);
   state.outlineSource = state.outlineSource || "手动输入";
   renderQuestions();
+  saveCurrentProjectWorkspace();
   renderAll();
   toast(state.questions.length ? `已识别 ${state.questions.length} 个主要问题` : "尚未识别到问题，请检查大纲格式");
 }
@@ -1155,6 +1279,7 @@ async function uploadOutline(file) {
     state.outlineSource = data.filename;
     state.questions = data.questions || extractQuestions(data.text);
     $("#outlineInput").value = state.outlineText;
+    saveCurrentProjectWorkspace();
     renderAll();
     toast(`已从 ${data.filename} 识别 ${state.questions.length} 个问题`);
   } catch (error) {
@@ -1339,6 +1464,7 @@ async function runAnalysis() {
     state.analyses = data.analyses;
     state.matrix = data.matrix;
     state.questions = data.questions;
+    saveCurrentProjectWorkspace();
     setPipeline(3, 93, "正在校验洞察与逐字引文证据链…");
     renderAll();
     await new Promise((resolve) => setTimeout(resolve, 420));
@@ -1505,6 +1631,7 @@ function stopSpeechPreview() {
 }
 
 function renderAll() {
+  renderProjectSwitcher();
   renderTranscripts();
   renderRoleMapper();
   renderQuestions();
@@ -1524,7 +1651,7 @@ window.addEventListener("resize", hideConfidencePopover);
 $("#cancelAnalysis").addEventListener("click", () => $("#analysisDialog").close());
 $("#goCollect").addEventListener("click", () => showView("transcripts"));
 $("#goAnalyze").addEventListener("click", () => showView("outline"));
-$("#newAnalysis").addEventListener("click", () => showView("transcripts"));
+$("#newAnalysis").addEventListener("click", createProject);
 $("#uploadButton").addEventListener("click", () => $("#fileInput").click());
 $("#browseButton").addEventListener("click", (event) => { event.stopPropagation(); $("#fileInput").click(); });
 $("#uploadZone").addEventListener("click", (event) => { if (!event.target.closest("button")) $("#fileInput").click(); });
@@ -1551,7 +1678,8 @@ $("#clearFiles").addEventListener("click", async () => {
     await deleteLocalInterview(item);
   }
   const selectedKeys = new Set(selected.map((item) => item.serverId || item.id));
-  state.interviews = state.interviews.filter((item) => !selectedKeys.has(item.serverId || item.id));
+  state.allInterviews = state.allInterviews.filter((item) => !selectedKeys.has(item.serverId || item.id));
+  syncCurrentProjectInterviews();
   state.matrix = [];
   state.report = null;
   state.analyses = [];
@@ -1576,8 +1704,8 @@ $("#outlineUpload").addEventListener("click", (event) => { if (!event.target.clo
 $("#outlineUpload").addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") $("#outlineFile").click(); });
 $("#outlineFile").addEventListener("change", (event) => { if (event.target.files[0]) uploadOutline(event.target.files[0]); });
 $("#parseOutline").addEventListener("click", parseOutlineFromText);
-$("#outlineInput").addEventListener("input", () => { state.outlineText = $("#outlineInput").value; state.outlineSource = "手动输入"; });
-$("#clearOutline").addEventListener("click", () => { state.outlineText = ""; state.outlineSource = ""; state.questions = []; $("#outlineInput").value = ""; renderAll(); });
+$("#outlineInput").addEventListener("input", () => { state.outlineText = $("#outlineInput").value; state.outlineSource = "手动输入"; saveCurrentProjectWorkspace(); });
+$("#clearOutline").addEventListener("click", () => { state.outlineText = ""; state.outlineSource = ""; state.questions = []; $("#outlineInput").value = ""; saveCurrentProjectWorkspace(); renderAll(); });
 $("#runOutlineAnalysis").addEventListener("click", runAnalysis);
 $("#exportExcel").addEventListener("click", () => downloadExport("xlsx"));
 $("#exportWord").addEventListener("click", () => downloadExport("docx"));
@@ -1600,18 +1728,38 @@ $("#toggleApiKey").addEventListener("click", () => {
   input.type = input.type === "password" ? "text" : "password";
   $("#toggleApiKey").textContent = input.type === "password" ? "显示" : "隐藏";
 });
-$("#projectButton").addEventListener("click", () => {
-  const name = prompt("请输入研究项目名称", state.projectName);
-  if (name?.trim()) {
-    state.projectName = name.trim();
-    $("#projectLabel").textContent = state.projectName;
-    $("#breadcrumbProject").textContent = state.projectName;
-    renderReport();
-  }
-});
+function renameCurrentProject() {
+  const name = prompt("请输入当前研究项目名称", state.projectName);
+  if (!name?.trim()) return;
+  const project = currentProject();
+  project.name = name.trim().slice(0, 80);
+  state.projectName = project.name;
+  state.interviews.forEach((item) => { item.projectName = project.name; });
+  saveProjects();
+  saveCurrentProjectWorkspace();
+  renderAll();
+  state.interviews.forEach((_, index) => persistInterview(index));
+  toast("研究项目名称已更新");
+}
+
+function createProject() {
+  const name = prompt("请输入新研究项目名称", `新研究 ${state.projects.length + 1}`);
+  if (!name?.trim()) return;
+  const project = { id: createProjectId(), name: name.trim().slice(0, 80) };
+  state.projects.push(project);
+  setActiveProject(project.id);
+  showView("transcripts");
+  toast(`已创建研究：${project.name}`);
+}
+
+$("#projectSelect").addEventListener("change", (event) => setActiveProject(event.target.value));
+$("#renameProject").addEventListener("click", renameCurrentProject);
+$("#createProject").addEventListener("click", createProject);
 window.addEventListener("hashchange", () => showView(savedView(), { updateHash: false }));
 
 async function initializeApp() {
+  loadProjects();
+  loadCurrentProjectWorkspace();
   showView(savedView(), { updateHash: location.hash.length > 1, scroll: false });
   renderAll();
   await checkPortalSession();
