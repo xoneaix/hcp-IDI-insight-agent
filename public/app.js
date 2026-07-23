@@ -214,14 +214,14 @@ function humanizeFileTransferError(message = "") {
     return "网络或大文件上传连接中断。当前资料已保留本机备份；请等待网络稳定后重试，系统会对大视频自动分片上传。";
   }
   if (/413|too large|content too large|payload too large|request entity too large/i.test(message)) {
-    return "文件体积较大，服务器拒绝了单次上传。请点击“生成 M4A 并转录”，系统会使用分片上传。";
+    return "文件体积较大，服务器拒绝了单次上传。请点击“转录”，系统会自动分片上传、转换为 M4A 后再转录。";
   }
   return message || "未知错误";
 }
 
 async function uploadChunkedConversionJob(file, item) {
   const chunkCount = Math.ceil(file.size / CONVERSION_CHUNK_SIZE);
-  item.progressText = `大视频将分为 ${chunkCount} 片上传后生成 M4A`;
+  item.progressText = `大视频将分为 ${chunkCount} 片上传，并自动转换为 M4A`;
   renderTranscripts();
   const startResponse = await fetch(`${API_BASE}/api/media/convert-audio/chunked/start`, {
     method: "POST",
@@ -254,11 +254,32 @@ async function uploadChunkedConversionJob(file, item) {
   return completed;
 }
 
+function isConvertibleVideoInterview(item) {
+  return isVideoInterview(item) && !/\.m4a$/i.test(item.name || item.fileName || "");
+}
+
+function mergeConvertedAudioIntoSource(item, audioFile, outputName, convertedSize) {
+  item.file = audioFile;
+  item.name = outputName;
+  item.fileName = outputName;
+  item.mimeType = audioFile.type || "audio/mp4";
+  item.fileSize = convertedSize || audioFile.size || item.fileSize || 0;
+  item.hasFile = true;
+  item.source = "音频预处理";
+  item.derivedFromId = item.derivedFromId || item.id;
+  item.status = item.text ? "已转录" : "待转录";
+  item.progressText = "已自动转换为 M4A，正在转录轻量音频。";
+  item.error = "";
+  item.persistError = "";
+  item.uploadProgress = null;
+  return item;
+}
+
 function isVideoInterview(item) {
   return /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(item.name || item.fileName || "") || /^video\//i.test(item.mimeType || item.file?.type || "");
 }
 
-async function convertInterviewAudio(index) {
+async function convertInterviewAudio(index, options = {}) {
   const item = state.interviews[index];
   if (!item) return;
   const health = await checkHealth();
@@ -300,36 +321,21 @@ async function convertInterviewAudio(index) {
     });
     const { outputName, blob } = await downloadConversionResult(job, { save: false });
     const audioFile = new File([blob], outputName, { type: blob.type || "audio/mp4" });
-    const [audioIndex] = await addFiles([audioFile], {
-      source: "音频预处理",
-      type: item.type,
-      durationSeconds: item.durationSeconds
-    });
-    item.status = item.text ? "已转录" : "待转录";
-    if (Number.isInteger(audioIndex)) {
-      const audioItem = state.interviews[audioIndex];
-      const originalId = item.id;
-      if (item.serverId) {
-        await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}`, { method: "DELETE" }).catch(() => {});
-      }
-      await deleteLocalInterview(item);
-      state.interviews = state.interviews.filter((candidate) => candidate !== item);
-      const nextAudioIndex = state.interviews.indexOf(audioItem);
-      if (audioItem) {
-        audioItem.derivedFromId = originalId;
-        audioItem.progressText = `已由 ${originalId} 自动生成 M4A，原视频已从列表移除，正在转录轻量音频。`;
-        audioItem.selected = true;
-        await persistInterview(nextAudioIndex);
-      }
-      renderAll();
-      toast(`${originalId} 已生成 M4A，原 MP4 已自动移除，正在转录轻量音频`, 5000);
-      if (nextAudioIndex >= 0) await transcribeInterview(nextAudioIndex);
-      return;
-    }
-    item.progressText = `M4A 已生成（${formatFileSize(job.convertedSize || 0)}），但自动加入资料失败；可重新点击“生成 M4A”。`;
+    const originalServerId = item.serverId;
+    await deleteLocalInterview(item);
+    if (originalServerId) await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(originalServerId)}`, { method: "DELETE" }).catch(() => {});
+    item.serverId = "";
+    item.persisted = false;
+    item.localPersisted = false;
+    mergeConvertedAudioIntoSource(item, audioFile, outputName, job.convertedSize);
+    await persistInterview(index);
+    renderAll();
+    toast(`${item.id} 已自动转换为 M4A，正在转录轻量音频`, 4500);
+    if (options.autoTranscribe !== false) await transcribeInterview(index, { skipAutoConvert: true });
+    return;
   } catch (error) {
     item.status = "转换失败";
-    item.progressText = "转换错误已保留，可点击“生成 M4A”重试";
+    item.progressText = "转换错误已保留，可点击“转录”重试";
     item.error = humanizeFileTransferError(error.message);
     toast(`转换失败：${item.error}`, 7000);
   }
@@ -822,7 +828,7 @@ function humanizeTranscriptionError(message = "") {
     return "音视频文件过大，请使用大型文件自动分片转录，或缩短录音后重试。";
   }
   if (/failed to fetch|networkerror|load failed/i.test(message)) {
-    return "网络连接或服务端任务短暂中断，可能是页面刷新、Render 正在部署/重启，或浏览器到服务器连接超时。请等待 1 分钟后点击“重试”；如果仍失败，优先点击列表行内“生成 M4A 并转录”。";
+    return "网络连接或服务端任务短暂中断，可能是页面刷新、Render 正在部署/重启，或浏览器到服务器连接超时。请等待 1 分钟后点击“重试”；如果仍失败，请点击列表行内“转录”，系统会自动完成音频预处理后再转录。";
   }
   return message || "未知错误";
 }
@@ -905,8 +911,10 @@ function renderTranscripts() {
   } else {
     table.innerHTML = state.interviews.map((item, index) => {
       const isMedia = (item.file || item.hasFile) && !/\.(txt|md|csv|json)$/i.test(item.name);
-      const canConvertAudio = isMedia && isVideoInterview(item);
-      const actionLabel = isMedia ? (item.text ? "重新转录" : item.status === "转录失败" ? "重试" : "转录") : "无需转录";
+      const actionLabel = isMedia ? (item.text ? "重新转录" : item.status === "转录失败" || item.status === "转换失败" ? "重试" : "转录") : "无需转录";
+      const transcribeClass = item.text ? "retranscribe" : item.status === "转录失败" || item.status === "转换失败" ? "retry" : "primary";
+      const canIdentifyRole = Boolean(item.text);
+      const roleActionLabel = item.roleResult ? "重新区分" : "区分角色";
       const statusClass = item.status.includes("中") || item.status.includes("预处理") ? "processing" : item.status === "转录失败" || item.status === "转换失败" ? "failed" : item.status === "录音已保存" ? "saved" : "";
       const sourceLabel = item.source === "实时录音" ? `实时录音${item.recordedAt ? ` · ${escapeHTML(item.recordedAt)}` : ""}` : item.source === "音频预处理" ? "音频预处理" : "上传文件";
       const fileSize = item.file?.size || item.fileSize || 0;
@@ -917,7 +925,7 @@ function renderTranscripts() {
         <td><select class="type-select" data-index="${index}" aria-label="受访者类型"><option value="HCP" ${normalizeRespondentType(item.type) === "HCP" ? "selected" : ""}>HCP</option><option value="Patient" ${normalizeRespondentType(item.type) === "Patient" ? "selected" : ""}>Patient</option></select></td>
         <td>${escapeHTML(item.duration)}</td>
         <td><span class="status-pill ${statusClass}">${escapeHTML(item.status)}</span>${item.progressText ? `<small class="transcript-progress">${escapeHTML(item.progressText)}</small>` : ""}${uploadProgress !== null ? `<span class="upload-progress-bar" aria-label="上传保存进度 ${uploadProgress}%"><i style="width:${uploadProgress}%"></i></span>` : ""}</td>
-        <td><div class="row-actions"><button class="transcribe-button ${item.status === "转录失败" ? "retry" : ""}" data-index="${index}" ${isMedia ? "" : "disabled"}>${actionLabel}</button>${canConvertAudio ? `<button class="convert-row-button" data-index="${index}">生成 M4A 并转录</button>` : ""}</div></td>
+        <td><div class="row-actions"><button class="transcribe-button ${transcribeClass}" data-index="${index}" ${isMedia ? "" : "disabled"}>${actionLabel}</button><button class="role-row-button" data-index="${index}" ${canIdentifyRole ? "" : "disabled"}>${roleActionLabel}</button></div></td>
       </tr>`;
     }).join("");
   }
@@ -935,7 +943,7 @@ function renderTranscripts() {
     await persistInterview(index);
   }));
   $$(".transcribe-button").forEach((button) => button.addEventListener("click", () => transcribeInterview(+button.dataset.index)));
-  $$(".convert-row-button").forEach((button) => button.addEventListener("click", () => convertInterviewAudio(+button.dataset.index)));
+  $$(".role-row-button").forEach((button) => button.addEventListener("click", () => identifyRoleForInterview(+button.dataset.index)));
 }
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -1011,8 +1019,10 @@ function applyTranscriptionResult(item, data) {
   if (data.duration) item.durationSeconds = data.duration;
 }
 
-async function transcribeInterview(index) {
+async function transcribeInterview(index, options = {}) {
   const item = state.interviews[index];
+  if (!item) return;
+  if (!options.skipAutoConvert && isConvertibleVideoInterview(item)) return convertInterviewAudio(index, { autoTranscribe: true });
   const health = await checkHealth();
   if (!health) return toast("请先启动 MedVoice 本地服务");
   if (!state.apiConfigured) return openApiSettings(() => transcribeInterview(index));
@@ -1222,12 +1232,18 @@ function renderRoleMapper() {
   }));
 }
 
-async function identifySelectedRoles() {
-  const ready = selectedInterviews().filter((item) => item.text);
+async function identifyRoleForInterview(index) {
+  const item = state.interviews[index];
+  if (!item?.text) return toast("请先完成该访谈的转录");
+  item.selected = true;
+  await identifyRolesForItems([item]);
+}
+
+async function identifyRolesForItems(ready) {
   if (!ready.length) return toast("请先选择至少一份已转录访谈");
   const health = await checkHealth();
   if (!health) return toast("请先启动 MedVoice 本地服务");
-  if (!state.apiConfigured) return openApiSettings(identifySelectedRoles);
+  if (!state.apiConfigured) return openApiSettings(() => identifyRolesForItems(ready));
   state.roleProcessing = true;
   state.roleProgress = { total: ready.length, current: 1, currentName: ready[0]?.id || "所选访谈", percent: 3 };
   renderRoleMapper();
@@ -1273,6 +1289,11 @@ async function identifySelectedRoles() {
     state.roleProgress = null;
     renderAll();
   }
+}
+
+async function identifySelectedRoles() {
+  const ready = selectedInterviews().filter((item) => item.text);
+  return identifyRolesForItems(ready);
 }
 
 async function deleteSelectedRoleDocs() {
