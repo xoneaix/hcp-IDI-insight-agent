@@ -84,7 +84,7 @@ async function pollConversionJob(jobId, onProgress = () => {}) {
   }
 }
 
-async function downloadConversionResult(job) {
+async function downloadConversionResult(job, options = {}) {
   const response = await fetch(`${API_BASE}${job.downloadUrl}`, { cache: "no-store" });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
@@ -92,7 +92,7 @@ async function downloadConversionResult(job) {
   }
   const blob = await response.blob();
   const outputName = filenameFromDisposition(response.headers.get("Content-Disposition"), job.outputName || "interview-audio.m4a");
-  saveBlob(blob, outputName);
+  if (options.save !== false) saveBlob(blob, outputName);
   return { outputName, blob };
 }
 
@@ -180,10 +180,22 @@ async function convertInterviewAudio(index) {
       item.progressText = `${job.message || "正在转换"}${progressText}`;
       renderTranscripts();
     });
-    await downloadConversionResult(job);
+    const { outputName, blob } = await downloadConversionResult(job, { save: false });
+    const audioFile = new File([blob], outputName, { type: blob.type || "audio/mp4" });
+    const [audioIndex] = await addFiles([audioFile], {
+      source: "音频预处理",
+      type: item.type,
+      durationSeconds: item.durationSeconds
+    });
     item.status = item.text ? "已转录" : "待转录";
-    item.progressText = `M4A 已生成并开始下载（${formatFileSize(job.convertedSize || 0)}）；请将该 M4A 上传后转录。`;
-    toast(`${item.id} 的 M4A 已生成并下载`);
+    if (Number.isInteger(audioIndex)) {
+      item.progressText = `已生成轻量 M4A，并自动加入为 ${state.interviews[audioIndex].id} 开始转录。`;
+      await persistInterview(index);
+      toast(`${item.id} 已生成 M4A，正在自动转录轻量音频`, 4500);
+      await transcribeInterview(audioIndex);
+      return;
+    }
+    item.progressText = `M4A 已生成（${formatFileSize(job.convertedSize || 0)}），但自动加入资料失败；可重新点击“生成 M4A”。`;
   } catch (error) {
     item.status = "转换失败";
     item.progressText = "转换错误已保留，可点击“生成 M4A”重试";
@@ -642,7 +654,7 @@ function renderTranscripts() {
       const canConvertAudio = isMedia && isVideoInterview(item);
       const actionLabel = isMedia ? (item.text ? "重新转录" : item.status === "转录失败" ? "重试" : "转录") : "无需转录";
       const statusClass = item.status.includes("中") || item.status.includes("预处理") ? "processing" : item.status === "转录失败" || item.status === "转换失败" ? "failed" : item.status === "录音已保存" ? "saved" : "";
-      const sourceLabel = item.source === "实时录音" ? `实时录音${item.recordedAt ? ` · ${escapeHTML(item.recordedAt)}` : ""}` : "上传文件";
+      const sourceLabel = item.source === "实时录音" ? `实时录音${item.recordedAt ? ` · ${escapeHTML(item.recordedAt)}` : ""}` : item.source === "音频预处理" ? "音频预处理" : "上传文件";
       const fileSize = item.file?.size || item.fileSize || 0;
       return `<tr>
         <td><input class="row-check" type="checkbox" data-index="${index}" ${item.selected ? "checked" : ""} aria-label="选择 ${escapeHTML(item.id)}" /></td>
@@ -650,7 +662,7 @@ function renderTranscripts() {
         <td><select class="type-select" data-index="${index}" aria-label="受访者类型"><option value="HCP" ${item.type === "HCP" ? "selected" : ""}>HCP</option><option value="患者" ${item.type === "患者" ? "selected" : ""}>患者</option></select></td>
         <td>${escapeHTML(item.duration)}</td>
         <td><span class="status-pill ${statusClass}">${escapeHTML(item.status)}</span>${item.progressText ? `<small class="transcript-progress">${escapeHTML(item.progressText)}</small>` : ""}</td>
-        <td><div class="row-actions"><button class="transcribe-button ${item.status === "转录失败" ? "retry" : ""}" data-index="${index}" ${isMedia ? "" : "disabled"}>${actionLabel}</button>${canConvertAudio ? `<button class="convert-row-button" data-index="${index}">生成 M4A</button>` : ""}</div></td>
+        <td><div class="row-actions"><button class="transcribe-button ${item.status === "转录失败" ? "retry" : ""}" data-index="${index}" ${isMedia ? "" : "disabled"}>${actionLabel}</button>${canConvertAudio ? `<button class="convert-row-button" data-index="${index}">生成 M4A 并转录</button>` : ""}</div></td>
       </tr>`;
     }).join("");
   }
