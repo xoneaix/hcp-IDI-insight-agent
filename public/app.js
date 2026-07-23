@@ -392,6 +392,7 @@ async function persistInterview(index) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "资料保存失败");
     if (data.item) applyPersistedItem(item, data.item);
+    item.persistError = "";
     await saveLocalInterview(index);
   } catch (error) {
     item.persistError = error.message;
@@ -471,6 +472,9 @@ function humanizeTranscriptionError(message = "") {
   }
   if (/413|too large|请求内容过大/i.test(message)) {
     return "音视频文件过大，请使用大型文件自动分片转录，或缩短录音后重试。";
+  }
+  if (/failed to fetch|networkerror|load failed/i.test(message)) {
+    return "网络连接或服务端任务短暂中断，可能是页面刷新、Render 正在部署/重启，或浏览器到服务器连接超时。请等待 1 分钟后点击“重试”；如果仍失败，优先用“视频转音频预处理”生成 M4A 后再上传。";
   }
   return message || "未知错误";
 }
@@ -580,6 +584,7 @@ function estimatedChunkCount(item) {
 function startTranscriptionTicker(item, index, phase, estimatedChunks, mode) {
   const startedAt = Date.now();
   return setInterval(() => {
+    if (!["大型文件处理中", "转录中", "快速转录中"].includes(item.status)) return;
     const elapsed = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
     const chunkText = estimatedChunks ? ` · 预计 ${estimatedChunks} 个分片` : "";
     const modeText = mode === "fast" ? "快速模式" : "说话人识别模式";
@@ -589,11 +594,31 @@ function startTranscriptionTicker(item, index, phase, estimatedChunks, mode) {
 }
 
 async function pollTranscriptionJob(jobId, index, item, estimatedChunks) {
+  let transientFailures = 0;
   for (;;) {
     await delay(2500);
-    const response = await fetch(`${API_BASE}/api/transcribe-large/jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
-    const job = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(job.error?.message || job.error || "无法读取转录进度");
+    let response;
+    let job;
+    try {
+      response = await fetch(`${API_BASE}/api/transcribe-large/jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+      job = await response.json().catch(() => ({}));
+    } catch (error) {
+      transientFailures += 1;
+      item.progressText = `连接服务器读取进度时短暂中断，正在自动重试 ${transientFailures}/8；请暂时不要重复点击。`;
+      if (state.interviews[index] === item) renderTranscripts();
+      if (transientFailures < 8) continue;
+      throw error;
+    }
+    if (!response.ok) {
+      transientFailures += response.status >= 500 ? 1 : 8;
+      if (transientFailures < 8) {
+        item.progressText = `服务器正在恢复转录任务，自动重试 ${transientFailures}/8。`;
+        if (state.interviews[index] === item) renderTranscripts();
+        continue;
+      }
+      throw new Error(job.error?.message || job.error || "无法读取转录进度");
+    }
+    transientFailures = 0;
     const chunkText = job.chunkCount ? `第 ${job.chunkIndex || 0}/${job.chunkCount} 段` : estimatedChunks ? `预计 ${estimatedChunks} 段` : "正在准备分片";
     const percentText = Number.isFinite(job.progress) ? ` · ${job.progress}%` : "";
     item.status = job.status === "failed" ? "转录失败" : "大型文件处理中";
@@ -693,6 +718,10 @@ async function transcribeInterview(index) {
     applyTranscriptionResult(item, data);
     toast(`${item.id} 转录完成${data.chunks ? `（${data.chunks} 个音频分片）` : ""}`);
   } catch (error) {
+    if (ticker) {
+      clearInterval(ticker);
+      ticker = null;
+    }
     const friendlyError = humanizeTranscriptionError(error.message);
     const isQuotaError = /quota|billing|insufficient_quota|429/i.test(error.message || "");
     const draftText = String(item.draftText || "").trim();
