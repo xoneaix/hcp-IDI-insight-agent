@@ -864,6 +864,7 @@ function renderRoleMapper() {
 
   $("#identifyRoles").disabled = state.roleProcessing || !ready.length;
   $("#exportRoleWord").disabled = state.roleProcessing || !selectedForWord.length;
+  $("#deleteRoleDocs").disabled = state.roleProcessing || !selectedForWord.length;
   $("#selectAllRoleDocs").disabled = state.roleProcessing || !completed.length;
   $("#selectAllRoleDocs").textContent = allRoleDocsSelected ? "取消全选" : "全选 Word";
   $("#exportRoleWord").textContent = selectedForWord.length ? `导出所选 Word (${selectedForWord.length}) ↗` : "导出所选 Word ↗";
@@ -947,6 +948,22 @@ async function identifySelectedRoles() {
     state.roleProcessing = false;
     renderAll();
   }
+}
+
+async function deleteSelectedRoleDocs() {
+  const items = selectedRoleDocuments();
+  if (!items.length) return toast("请先勾选需要删除的角色区分结果");
+  if (!confirm(`确定删除选中的 ${items.length} 份角色区分结果吗？原始文件和转录文本会保留，可重新区分角色。`)) return;
+  const indexes = items.map((item) => state.interviews.indexOf(item)).filter((index) => index >= 0);
+  for (const index of indexes) {
+    const item = state.interviews[index];
+    item.roleResult = null;
+    item.roleSelected = false;
+    item.roleExpanded = false;
+    await persistInterview(index);
+  }
+  renderAll();
+  toast(`已删除 ${indexes.length} 份角色区分结果，原始访谈资料已保留`);
 }
 
 async function exportRoleWord() {
@@ -1415,6 +1432,7 @@ $("#selectAllRoleDocs").addEventListener("click", () => {
   completed.forEach((item) => { item.roleSelected = shouldSelectAll; });
   renderRoleMapper();
 });
+$("#deleteRoleDocs").addEventListener("click", deleteSelectedRoleDocs);
 $("#exportRoleWord").addEventListener("click", exportRoleWord);
 $("#browseOutline").addEventListener("click", (event) => { event.stopPropagation(); $("#outlineFile").click(); });
 $("#outlineUpload").addEventListener("click", (event) => { if (!event.target.closest("button")) $("#outlineFile").click(); });
