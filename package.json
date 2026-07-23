@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node scripts/start.mjs",
     "dev": "node --watch scripts/start.mjs",
-    "test": "node --test && node --check public/app.js"
+    "test": "node --test && node --check public/app.js",
+    "extract-audio": "node scripts/extract-meeting-audio.mjs"
   },
   "engines": {
     "node": ">=24"

@@ -501,6 +501,58 @@ function renderTranscripts() {
   $$(".transcribe-button").forEach((button) => button.addEventListener("click", () => transcribeInterview(+button.dataset.index)));
 }
 
+const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+function selectedTranscriptionMode() {
+  return $("#fastTranscriptionMode")?.checked ? "fast" : "diarize";
+}
+
+function estimatedChunkCount(item) {
+  const duration = Number(item.durationSeconds);
+  if (Number.isFinite(duration) && duration > 0) return Math.max(1, Math.ceil(duration / 600));
+  return 0;
+}
+
+function startTranscriptionTicker(item, index, phase, estimatedChunks, mode) {
+  const startedAt = Date.now();
+  return setInterval(() => {
+    const elapsed = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+    const chunkText = estimatedChunks ? ` · 预计 ${estimatedChunks} 个分片` : "";
+    const modeText = mode === "fast" ? "快速模式" : "说话人识别模式";
+    item.progressText = `${phase}${chunkText} · 已等待 ${formatDuration(elapsed)} · ${modeText}`;
+    if (state.interviews[index] === item) renderTranscripts();
+  }, 9000);
+}
+
+async function pollTranscriptionJob(jobId, index, item, estimatedChunks) {
+  for (;;) {
+    await delay(2500);
+    const response = await fetch(`${API_BASE}/api/transcribe-large/jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+    const job = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(job.error?.message || job.error || "无法读取转录进度");
+    const chunkText = job.chunkCount ? `第 ${job.chunkIndex || 0}/${job.chunkCount} 段` : estimatedChunks ? `预计 ${estimatedChunks} 段` : "正在准备分片";
+    const percentText = Number.isFinite(job.progress) ? ` · ${job.progress}%` : "";
+    item.status = job.status === "failed" ? "转录失败" : "大型文件处理中";
+    item.progressText = `${job.message || "正在处理"}（${chunkText}${percentText}）`;
+    if (state.interviews[index] === item) renderTranscripts();
+    if (job.status === "completed") return job.result || {};
+    if (job.status === "failed") throw new Error(job.error || "大文件转录失败");
+  }
+}
+
+function applyTranscriptionResult(item, data) {
+  item.text = (data.segments || []).map((segment) => `${segment.speaker} [${formatDuration(segment.start)}]：${segment.text}`).join("\n") || data.text || "";
+  item.roleResult = null;
+  item.status = "已转录";
+  item.progressText = data.transcription_mode === "fast-whisper"
+    ? "快速转录完成：逐字稿已建立，可继续点击“区分所选访谈角色”。"
+    : data.transcription_mode === "whisper-fallback"
+      ? "已使用兼容转录模式，建议复核说话人角色"
+      : "说话人分段已建立";
+  if (data.duration) item.duration = formatDuration(data.duration);
+  if (data.duration) item.durationSeconds = data.duration;
+}
+
 async function transcribeInterview(index) {
   const item = state.interviews[index];
   const health = await checkHealth();
@@ -508,41 +560,73 @@ async function transcribeInterview(index) {
   if (!state.apiConfigured) return openApiSettings(() => transcribeInterview(index));
   const fileSize = item.file?.size || item.fileSize || 0;
   const isLarge = fileSize > 24 * 1024 * 1024;
+  const mode = selectedTranscriptionMode();
+  const estimatedChunks = estimatedChunkCount(item);
+  let ticker = null;
   item.error = "";
-  item.progressText = isLarge ? "正在上传至本机并提取音轨，请勿关闭页面" : "正在发送音频并识别说话人";
-  item.status = isLarge ? "大型文件处理中" : "转录中";
+  item.progressText = isLarge
+    ? `正在上传并创建后台转录任务${estimatedChunks ? `（预计 ${estimatedChunks} 段）` : ""}，请勿关闭页面`
+    : mode === "fast" ? "正在快速转录音频为逐字稿" : "正在发送音频并识别说话人";
+  item.status = isLarge ? "大型文件处理中" : mode === "fast" ? "快速转录中" : "转录中";
   renderTranscripts();
   try {
+    let data;
     let response;
-    if (!item.file && item.serverId) {
-      response = await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}/transcribe`, { method: "POST" });
+    if (!item.file && item.serverId && isLarge) {
+      ticker = startTranscriptionTicker(item, index, "正在读取账号资料库大文件", estimatedChunks, mode);
+      const startResponse = await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}/transcribe/jobs`, {
+        method: "POST",
+        headers: { "X-Transcribe-Mode": mode }
+      });
+      const job = await startResponse.json().catch(() => ({}));
+      if (!startResponse.ok) throw new Error(job.error?.message || job.error || "创建资料库转录任务失败");
+      clearInterval(ticker);
+      ticker = null;
+      if (job.status === "completed") {
+        data = job.result || {};
+      } else {
+        item.progressText = job.message || "已读取账号资料，正在提取音频并分片";
+        renderTranscripts();
+        data = await pollTranscriptionJob(job.id, index, item, estimatedChunks);
+      }
+    } else if (!item.file && item.serverId) {
+      ticker = startTranscriptionTicker(item, index, "服务端资料正在转录", estimatedChunks, mode);
+      response = await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}/transcribe`, {
+        method: "POST",
+        headers: { "X-Transcribe-Mode": mode }
+      });
+      data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error?.message || data.error || "转录失败");
     } else if (isLarge) {
-      response = await fetch(`${API_BASE}/api/transcribe-large`, {
+      ticker = startTranscriptionTicker(item, index, "正在上传大文件并准备分片", estimatedChunks, mode);
+      const startResponse = await fetch(`${API_BASE}/api/transcribe-large/jobs`, {
         method: "POST",
         headers: {
           "Content-Type": item.file.type || "application/octet-stream",
           "X-Filename": encodeURIComponent(item.file.name),
+          "X-Transcribe-Mode": mode,
           ...(Number.isFinite(item.durationSeconds) ? { "X-Media-Duration": String(item.durationSeconds) } : {})
         },
         body: item.file
       });
+      const job = await startResponse.json().catch(() => ({}));
+      if (!startResponse.ok) throw new Error(job.error?.message || job.error || "创建大文件转录任务失败");
+      clearInterval(ticker);
+      ticker = null;
+      item.progressText = job.message || "上传完成，正在提取音频并分片";
+      renderTranscripts();
+      data = await pollTranscriptionJob(job.id, index, item, estimatedChunks);
     } else {
+      ticker = startTranscriptionTicker(item, index, mode === "fast" ? "正在快速转录" : "正在识别说话人", 0, mode);
       const form = new FormData();
       form.append("file", item.file);
+      form.append("transcriptionMode", mode);
       if (Number.isFinite(item.durationSeconds)) form.append("durationSeconds", String(item.durationSeconds));
-      form.append("model", "gpt-4o-transcribe-diarize");
-      form.append("response_format", "diarized_json");
-      form.append("chunking_strategy", "auto");
       response = await fetch(`${API_BASE}/api/transcribe`, { method: "POST", body: form });
+      data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error?.message || data.error || "转录失败");
     }
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error?.message || data.error || "转录失败");
-    item.text = (data.segments || []).map((segment) => `${segment.speaker} [${formatDuration(segment.start)}]：${segment.text}`).join("\n") || data.text || "";
-    item.roleResult = null;
-    item.status = "已转录";
-    item.progressText = data.transcription_mode === "whisper-fallback" ? "已使用兼容转录模式，建议复核说话人角色" : "说话人分段已建立";
-    if (data.duration) item.duration = formatDuration(data.duration);
-    if (data.duration) item.durationSeconds = data.duration;
+    applyTranscriptionResult(item, data);
     toast(`${item.id} 转录完成${data.chunks ? `（${data.chunks} 个音频分片）` : ""}`);
   } catch (error) {
     const friendlyError = humanizeTranscriptionError(error.message);
@@ -560,6 +644,8 @@ async function transcribeInterview(index) {
       item.error = friendlyError;
       toast(`转录失败：${item.error}`, 8000);
     }
+  } finally {
+    if (ticker) clearInterval(ticker);
   }
   await persistInterview(index);
   renderAll();

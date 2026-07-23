@@ -52,3 +52,10 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .sidebar-utilities .help-button span{color:#a9beb6}
 @media(max-width:1050px){.sidebar-utilities{grid-template-columns:1fr}.sidebar-utilities .utility-button{min-width:34px;padding:0}.sidebar-utilities .utility-button b{display:none}}
 @media(max-width:720px){.sidebar-utilities{display:none}}
+
+.transcription-mode-panel{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:-4px 0 17px;padding:12px 14px;border:1px solid #d9e5df;border-radius:12px;background:#f7faf8;color:#50625b}
+.fast-transcription-toggle{display:inline-flex;align-items:center;gap:8px;flex-shrink:0;font-size:11px;font-weight:700;color:#214f42;cursor:pointer}
+.fast-transcription-toggle input{width:14px;height:14px;accent-color:var(--green)}
+.transcription-mode-panel p{margin:0;font-size:9px;line-height:1.7;color:#6f7c76}
+.transcript-progress{line-height:1.55}
+@media(max-width:720px){.transcription-mode-panel{display:grid}.fast-transcription-toggle{font-size:10px}}

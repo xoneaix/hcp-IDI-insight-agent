@@ -111,6 +111,10 @@
             <p>MP3 · WAV · MP4 · M4A · TXT · MD · CSV</p>
             <div><button class="secondary-button" id="browseButton">选择文件</button><button class="record-button" id="recordButton"><span>●</span> 实时录音</button></div>
           </div>
+          <div class="transcription-mode-panel">
+            <label class="fast-transcription-toggle"><input id="fastTranscriptionMode" type="checkbox" checked /> <span>快速转录模式</span></label>
+            <p>推荐用于腾讯会议 MP4 / 60 分钟以上访谈：优先提取音轨、分片转文字，完成后再用“区分对话角色”整理问答；若需原生说话人分离，可关闭此模式。</p>
+          </div>
           <div class="recording-console" id="recordingConsole" hidden>
             <div class="recording-state"><span class="recording-pulse"></span><div><strong id="recordingStatus">准备录音</strong><small>录音文件将保留在当前浏览器会话中</small></div></div>
             <div class="recording-options">
