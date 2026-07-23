@@ -91,13 +91,12 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .medvoice-logo{width:72px;height:72px;padding:0;background:transparent;border:0;box-shadow:none;overflow:visible;flex:0 0 72px}
 .medvoice-logo svg{display:block;width:72px;height:72px}
 .medvoice-logo .logo-bg{fill:url(#mvLogoGlow)}
-.medvoice-logo .logo-m,.medvoice-logo .logo-scope,.medvoice-logo .logo-scope-ear,.medvoice-logo .logo-pulse,.medvoice-logo .logo-cross{fill:none;stroke-linecap:round;stroke-linejoin:round}
+.medvoice-logo .logo-m,.medvoice-logo .logo-v,.medvoice-logo .logo-pulse,.medvoice-logo .logo-cross{fill:none;stroke-linecap:round;stroke-linejoin:round}
 .medvoice-logo .logo-m{stroke:#12362e;stroke-width:6.4}
-.medvoice-logo .logo-scope{stroke:#247963;stroke-width:4.8}
-.medvoice-logo .logo-scope-ear{stroke:#247963;stroke-width:3.6}
-.medvoice-logo .logo-scope-head{fill:#247963;stroke:#eafff7;stroke-width:2}
-.medvoice-logo .logo-pulse{stroke:#eafff7;stroke-width:4.1;opacity:1;filter:drop-shadow(0 1px 0 rgba(20,59,50,.18))}
-.medvoice-logo .logo-cross{stroke:#c95b61;stroke-width:3.4;opacity:.86}
+.medvoice-logo .logo-v{stroke:#247963;stroke-width:5.5}
+.medvoice-logo .logo-v-end{fill:#247963}
+.medvoice-logo .logo-pulse{stroke:#eafff7;stroke-width:3.8;opacity:1;filter:drop-shadow(0 1px 0 rgba(20,59,50,.18))}
+.medvoice-logo .logo-cross{stroke:#fff;stroke-width:3.2;opacity:.9}
 .brand strong{font-size:19px}.brand small{font-size:9.5px;letter-spacing:2px}
 .project-select-wrap{display:block;margin-top:7px;position:relative}
 .project-select-wrap::after{content:"⌄";position:absolute;right:10px;top:50%;transform:translateY(-50%);color:#bad0c8;font-size:11px;pointer-events:none}
