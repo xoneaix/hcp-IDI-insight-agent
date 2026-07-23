@@ -908,6 +908,9 @@ function humanizeTranscriptionError(message = "") {
   if (/failed to fetch|networkerror|load failed/i.test(message)) {
     return "网络连接或服务端任务短暂中断，可能是页面刷新、Render 正在部署/重启，或浏览器到服务器连接超时。请等待 1 分钟后点击“重试”；如果仍失败，请点击列表行内“转录”，系统会自动完成音频预处理后再转录。";
   }
+  if (/转录任务不存在|任务不存在|已过期/i.test(message)) {
+    return "后台转录任务已中断或过期，通常是 Render 重启/重新部署导致任务队列被清空。请点击“重试”，系统会从账号资料库重新创建任务，无需重新上传文件。";
+  }
   return message || "未知错误";
 }
 
@@ -1052,8 +1055,9 @@ function startTranscriptionTicker(item, index, phase, estimatedChunks, mode) {
   }, 9000);
 }
 
-async function pollTranscriptionJob(jobId, index, item, estimatedChunks) {
+async function pollTranscriptionJob(jobId, index, item, estimatedChunks, options = {}) {
   let transientFailures = 0;
+  let restoredFromLibrary = false;
   for (;;) {
     await delay(2500);
     let response;
@@ -1069,6 +1073,18 @@ async function pollTranscriptionJob(jobId, index, item, estimatedChunks) {
       throw error;
     }
     if (!response.ok) {
+      if (response.status === 404 && options.restartFromLibrary && !restoredFromLibrary) {
+        restoredFromLibrary = true;
+        item.progressText = "后台转录任务已中断，正在从账号资料库自动恢复，无需重新上传。";
+        if (state.interviews[index] === item) renderTranscripts();
+        const restartedJob = await options.restartFromLibrary();
+        if (restartedJob.status === "completed") return restartedJob.result || {};
+        jobId = restartedJob.id;
+        item.progressText = restartedJob.message || "恢复任务已创建，正在继续转录。";
+        if (state.interviews[index] === item) renderTranscripts();
+        transientFailures = 0;
+        continue;
+      }
       transientFailures += response.status >= 500 ? 1 : 8;
       if (transientFailures < 8) {
         item.progressText = `服务器正在恢复转录任务，自动重试 ${transientFailures}/8。`;
@@ -1086,6 +1102,16 @@ async function pollTranscriptionJob(jobId, index, item, estimatedChunks) {
     if (job.status === "completed") return job.result || {};
     if (job.status === "failed") throw new Error(job.error || "大文件转录失败");
   }
+}
+
+async function createStoredTranscriptionJob(item, mode) {
+  const startResponse = await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}/transcribe/jobs`, {
+    method: "POST",
+    headers: { "X-Transcribe-Mode": mode }
+  });
+  const job = await startResponse.json().catch(() => ({}));
+  if (!startResponse.ok) throw new Error(job.error?.message || job.error || "创建资料库转录任务失败");
+  return job;
 }
 
 function applyTranscriptionResult(item, data) {
@@ -1124,12 +1150,7 @@ async function transcribeInterview(index, options = {}) {
     let response;
     if (!item.file && item.serverId && isLarge) {
       ticker = startTranscriptionTicker(item, index, "正在读取账号资料库大文件", estimatedChunks, mode);
-      const startResponse = await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}/transcribe/jobs`, {
-        method: "POST",
-        headers: { "X-Transcribe-Mode": mode }
-      });
-      const job = await startResponse.json().catch(() => ({}));
-      if (!startResponse.ok) throw new Error(job.error?.message || job.error || "创建资料库转录任务失败");
+      const job = await createStoredTranscriptionJob(item, mode);
       clearInterval(ticker);
       ticker = null;
       if (job.status === "completed") {
@@ -1137,7 +1158,9 @@ async function transcribeInterview(index, options = {}) {
       } else {
         item.progressText = job.message || "已读取账号资料，正在提取音频并分片";
         renderTranscripts();
-        data = await pollTranscriptionJob(job.id, index, item, estimatedChunks);
+        data = await pollTranscriptionJob(job.id, index, item, estimatedChunks, {
+          restartFromLibrary: () => createStoredTranscriptionJob(item, mode)
+        });
       }
     } else if (!item.file && item.serverId) {
       ticker = startTranscriptionTicker(item, index, "服务端资料正在转录", estimatedChunks, mode);
@@ -1165,7 +1188,9 @@ async function transcribeInterview(index, options = {}) {
       ticker = null;
       item.progressText = job.message || "上传完成，正在提取音频并分片";
       renderTranscripts();
-      data = await pollTranscriptionJob(job.id, index, item, estimatedChunks);
+      data = await pollTranscriptionJob(job.id, index, item, estimatedChunks, {
+        restartFromLibrary: item.serverId ? () => createStoredTranscriptionJob(item, mode) : null
+      });
     } else {
       ticker = startTranscriptionTicker(item, index, mode === "fast" ? "正在快速转录" : "正在识别说话人", 0, mode);
       const form = new FormData();
