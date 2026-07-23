@@ -65,3 +65,5 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 @media(max-width:720px){.media-converter-panel{grid-template-columns:1fr}.media-converter-panel>#convertAudioStatus{padding-left:0}.media-converter-panel button{width:100%}}
 .row-actions{display:flex;align-items:center;gap:7px}.convert-row-button{border:1px solid #d8dfdb;background:#fff;color:#31574e;border-radius:7px;padding:6px 8px;font-size:9px;font-weight:600;cursor:pointer;white-space:nowrap}.convert-row-button:hover{background:#f7faf8;border-color:#adc0b8;color:#245c4d}
 @media(max-width:720px){.row-actions{display:grid;gap:5px}}
+
+.table-actions .danger-text{color:#9d464a!important}.table-actions .danger-text:hover{color:#7f3034!important}

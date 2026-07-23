@@ -430,6 +430,11 @@ async function clearLocalInterviews() {
   }).catch(() => {});
 }
 
+async function deleteLocalInterview(item) {
+  if (!item) return;
+  await withLocalStore("readwrite", (store) => store.delete(localLibraryKey(item))).catch(() => {});
+}
+
 function itemFromLocalRecord(record) {
   const meta = record.meta || {};
   const file = record.blob ? new File([record.blob], record.fileName || meta.name || "interview.webm", { type: record.mimeType || record.blob.type || "application/octet-stream" }) : null;
@@ -1344,17 +1349,27 @@ $("#uploadZone").addEventListener("drop", (event) => addFiles([...event.dataTran
 $("#selectAll").addEventListener("click", () => { state.interviews.forEach((item) => { item.selected = true; }); renderAll(); });
 $("#masterCheck").addEventListener("change", (event) => { state.interviews.forEach((item) => { item.selected = event.target.checked; }); renderAll(); });
 $("#clearFiles").addEventListener("click", async () => {
-  if (!state.interviews.length || confirm("确定清空当前账号中的全部访谈资料吗？此操作会同步删除服务端保存的原始文件。")) {
-    try {
-      await fetch(`${API_BASE}/api/library/items`, { method: "DELETE" });
-    } catch {}
-    await clearLocalInterviews();
-    state.interviews = [];
-    state.matrix = [];
-    state.report = null;
-    state.analyses = [];
-    renderAll();
+  const selected = state.interviews.filter((item) => item.selected);
+  if (!state.interviews.length) return toast("当前没有可删除的资料");
+  if (!selected.length) return toast("请先勾选需要删除的资料");
+  const deletingAll = selected.length === state.interviews.length;
+  const message = deletingAll
+    ? `你已选中全部 ${selected.length} 份资料。确定删除全部已导入资料吗？此操作会同步删除服务端保存的原始文件。`
+    : `确定删除选中的 ${selected.length} 份资料吗？此操作会同步删除服务端保存的原始文件。`;
+  if (!confirm(message)) return;
+  for (const item of selected) {
+    if (item.serverId) {
+      await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}`, { method: "DELETE" }).catch(() => {});
+    }
+    await deleteLocalInterview(item);
   }
+  const selectedKeys = new Set(selected.map((item) => item.serverId || item.id));
+  state.interviews = state.interviews.filter((item) => !selectedKeys.has(item.serverId || item.id));
+  state.matrix = [];
+  state.report = null;
+  state.analyses = [];
+  renderAll();
+  toast(`已删除 ${selected.length} 份选中资料`);
 });
 $("#recordButton").addEventListener("click", (event) => { event.stopPropagation(); $("#recordingConsole").hidden = !$("#recordingConsole").hidden; });
 $("#startRecording").addEventListener("click", startRecording);
