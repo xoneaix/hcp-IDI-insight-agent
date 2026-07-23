@@ -32,6 +32,7 @@ const LOGIN_URL = location.protocol === "file:" ? `${API_BASE}/login` : "/login"
 const VIEW_STORAGE_KEY = "medvoice.activeView";
 const PROJECTS_STORAGE_KEY = "medvoice.projects";
 const ACTIVE_PROJECT_STORAGE_KEY = "medvoice.activeProject";
+const INITIAL_HASH = location.hash;
 const LARGE_CONVERSION_CHUNK_THRESHOLD = 80 * 1024 * 1024;
 const CONVERSION_CHUNK_SIZE = 8 * 1024 * 1024;
 const LOCAL_DB_NAME = "medvoice-interview-library";
@@ -347,9 +348,16 @@ function validView(view) {
   return ["overview", "transcripts", "outline", "matrix", "report"].includes(view) ? view : "overview";
 }
 
-function savedView() {
-  const fromHash = validView(location.hash.replace(/^#/, ""));
-  if (fromHash !== "overview" || location.hash === "#overview") return fromHash;
+function viewFromHash(hash = location.hash) {
+  const raw = String(hash || "").replace(/^#/, "");
+  if (!raw) return "";
+  return validView(raw);
+}
+
+function savedView(hash = location.hash) {
+  const rawHash = String(hash || "");
+  const fromHash = viewFromHash(rawHash);
+  if (rawHash && fromHash) return fromHash;
   try { return validView(localStorage.getItem(VIEW_STORAGE_KEY)); } catch { return "overview"; }
 }
 
@@ -364,8 +372,9 @@ function showView(view, options = {}) {
 
 async function checkHealth() {
   try {
-    const response = await fetch(`${API_BASE}/api/health`);
-    const data = await response.json();
+    const response = await fetch(`${API_BASE}/api/health`, { cache: "no-store" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `health ${response.status}`);
     state.apiConfigured = Boolean(data.apiConfigured);
     state.apiKeySource = data.apiKeySource || "none";
     $("#modeLabel").textContent = state.apiConfigured ? "AI 已连接" : "待配置 API";
@@ -373,9 +382,10 @@ async function checkHealth() {
     $("#apiSettingsLabel").textContent = state.apiKeySource === "server" ? "AI 企业服务" : state.apiConfigured ? "AI 已连接" : "连接 AI";
     $("#apiSettingsButton").classList.toggle("connected", state.apiConfigured);
     return data;
-  } catch {
+  } catch (error) {
     state.apiConfigured = false;
-    $("#modeLabel").textContent = "本地服务未启动";
+    console.warn("MedVoice health check failed", error);
+    $("#modeLabel").textContent = "检查连接";
     $("#modeLabel").style.color = "#f0b8a0";
     $("#apiSettingsLabel").textContent = "服务未启动";
     $("#apiSettingsButton").classList.remove("connected");
@@ -394,13 +404,19 @@ async function checkPortalSession() {
     $("#adminAccess").hidden = data.user?.role !== "admin" || !state.authRequired;
     $("#portalLogout").hidden = !state.authRequired;
     if (data.user?.role === "admin" && state.authRequired) {
-      const requestsResponse = await fetch(`${API_BASE}/api/admin/requests`);
-      const requestsData = await requestsResponse.json();
-      const pendingCount = (requestsData.requests || []).filter((item) => item.status === "pending").length;
-      $("#adminAccess").textContent = pendingCount ? `Access 管理 · ${pendingCount}` : "Access 管理";
-      $("#adminAccess").title = pendingCount ? `${pendingCount} 个试用申请待审批` : "暂无待审批申请";
+      try {
+        const requestsResponse = await fetch(`${API_BASE}/api/admin/requests`, { cache: "no-store" });
+        const requestsData = await requestsResponse.json().catch(() => ({}));
+        const pendingCount = (requestsData.requests || []).filter((item) => item.status === "pending").length;
+        $("#adminAccess").textContent = pendingCount ? `Access 管理 · ${pendingCount}` : "Access 管理";
+        $("#adminAccess").title = pendingCount ? `${pendingCount} 个试用申请待审批` : "暂无待审批申请";
+      } catch (error) {
+        console.warn("MedVoice admin request badge failed", error);
+      }
     }
-  } catch {}
+  } catch (error) {
+    console.warn("MedVoice session check failed", error);
+  }
 }
 
 function openApiSettings(nextAction = null) {
@@ -1857,14 +1873,24 @@ $("#createProject").addEventListener("click", createProject);
 window.addEventListener("hashchange", () => showView(savedView(), { updateHash: false }));
 
 async function initializeApp() {
+  const initialView = savedView(INITIAL_HASH);
   loadProjects();
   loadCurrentProjectWorkspace();
-  showView(savedView(), { updateHash: location.hash.length > 1, scroll: false });
+  showView(initialView, { updateHash: true, scroll: false });
   renderAll();
   await checkPortalSession();
-  await checkHealth();
-  await loadInterviewLibrary();
-  showView(savedView(), { updateHash: location.hash.length > 1, scroll: false });
+  const health = await checkHealth();
+  try {
+    await loadInterviewLibrary();
+  } catch (error) {
+    console.warn("MedVoice library bootstrap failed", error);
+    toast(`账号资料加载失败：${error.message}`, 6000);
+  }
+  showView(savedView(location.hash || INITIAL_HASH), { updateHash: true, scroll: false });
+  if (!health) toast("连接状态检查失败，请稍后刷新或查看 Render 服务状态", 4200);
 }
 
-initializeApp();
+initializeApp().catch((error) => {
+  console.error("MedVoice initialization failed", error);
+  toast(`页面初始化异常：${error.message}`, 7000);
+});
