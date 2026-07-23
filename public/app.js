@@ -315,6 +315,7 @@ async function convertInterviewAudio(index) {
       state.interviews = state.interviews.filter((candidate) => candidate !== item);
       const nextAudioIndex = state.interviews.indexOf(audioItem);
       if (audioItem) {
+        audioItem.derivedFromId = originalId;
         audioItem.progressText = `已由 ${originalId} 自动生成 M4A，原视频已从列表移除，正在转录轻量音频。`;
         audioItem.selected = true;
         await persistInterview(nextAudioIndex);
@@ -499,6 +500,7 @@ function interviewPayload(item) {
     name: item.name,
     type: normalizeRespondentType(item.type),
     source: item.source,
+    derivedFromId: item.derivedFromId || "",
     recordedAt: item.recordedAt || "",
     durationSeconds: item.durationSeconds,
     status: item.status,
@@ -620,6 +622,7 @@ function itemFromLocalRecord(record) {
     mimeType: record.mimeType || file?.type || "application/octet-stream",
     hasFile: Boolean(record.hasFile || file),
     source: meta.source || "上传文件",
+    derivedFromId: meta.derivedFromId || "",
     recordedAt: meta.recordedAt || "",
     persisted: Boolean(record.serverId),
     localPersisted: true,
@@ -637,6 +640,36 @@ function applyPersistedItem(local, persisted) {
   local.projectId = persisted.projectId || local.projectId || state.activeProjectId;
   local.projectName = persisted.projectName || local.projectName || state.projectName;
   return local;
+}
+
+function normalizeLoadedInterviewState(item) {
+  if (!item) return item;
+  if (/正在保存到账号资料库/.test(item.progressText || "")) item.progressText = "";
+  item.uploadProgress = null;
+  item.persisting = false;
+  return item;
+}
+
+function generatedAudioSourceId(item) {
+  const text = `${item.progressText || ""} ${item.source || ""}`;
+  return item.derivedFromId || text.match(/已由\s*([A-Za-z]+-\d{3,})\s*自动生成\s*M4A/i)?.[1] || "";
+}
+
+async function removeSupersededVideoSources(items) {
+  const sourceIds = new Set(items.map(generatedAudioSourceId).filter(Boolean));
+  if (!sourceIds.size) return items;
+  const kept = [];
+  const removed = [];
+  for (const item of items) {
+    const superseded = sourceIds.has(item.id) && isVideoInterview(item) && /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(item.name || item.fileName || "");
+    if (superseded) removed.push(item);
+    else kept.push(item);
+  }
+  for (const item of removed) {
+    if (item.serverId) await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}`, { method: "DELETE" }).catch(() => {});
+    await deleteLocalInterview(item);
+  }
+  return kept;
 }
 
 async function persistInterview(index) {
@@ -718,11 +751,11 @@ async function persistAllInterviews() {
 async function loadInterviewLibrary() {
   try {
     const localRecords = await loadLocalInterviews();
-    const localItems = localRecords.map(itemFromLocalRecord);
+    const localItems = localRecords.map(itemFromLocalRecord).map(normalizeLoadedInterviewState);
     const response = await fetch(`${API_BASE}/api/library/items`, { cache: "no-store" });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "资料库加载失败");
-    const serverItems = (data.items || []).map((item) => ({
+    const serverItems = (data.items || []).map((item) => normalizeLoadedInterviewState({
       ...normalizeProjectFields(item),
       id: item.id,
       serverId: item.serverId,
@@ -742,6 +775,7 @@ async function loadInterviewLibrary() {
       mimeType: item.mimeType,
       hasFile: item.hasFile,
       source: item.source || "上传文件",
+      derivedFromId: item.derivedFromId || "",
       recordedAt: item.recordedAt || "",
       persisted: true,
       selected: true
@@ -764,7 +798,7 @@ async function loadInterviewLibrary() {
         byId.set(key, localItem);
       }
     }
-    state.allInterviews = [...byId.values()];
+    state.allInterviews = await removeSupersededVideoSources([...byId.values()].map(normalizeLoadedInterviewState));
     mergeProjectsFromInterviews();
     saveProjects();
     syncCurrentProjectInterviews();
