@@ -914,7 +914,7 @@ function renderRoleMapper() {
           <input class="role-doc-check" type="checkbox" data-index="${itemIndex}" ${item.roleSelected !== false ? "checked" : ""} />
           <strong>${escapeHTML(item.id)} · ${escapeHTML(item.name)}</strong>
         </label>
-        <div class="role-doc-meta"><span>${exchangeCount} 组问答 · ${result.average_confidence || 0}%</span><button class="role-toggle" type="button" data-index="${itemIndex}">${item.roleExpanded ? "收起" : "展开预览"}</button></div>
+        <div class="role-doc-meta"><span>${exchangeCount} 组问答 · ${result.average_confidence || 0}% <button class="confidence-info-button" type="button" aria-label="查看角色区分置信度说明" title="查看角色区分置信度说明">i</button></span><button class="role-toggle" type="button" data-index="${itemIndex}">${item.roleExpanded ? "收起" : "展开预览"}</button></div>
       </div>
       ${body}
     </section>`;
@@ -929,6 +929,10 @@ function renderRoleMapper() {
     const item = roleMappedInterviews()[+event.currentTarget.dataset.index];
     if (item) item.roleExpanded = !item.roleExpanded;
     renderRoleMapper();
+  }));
+  $$(".confidence-info-button").forEach((button) => button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    $("#roleConfidenceDialog").showModal();
   }));
 }
 
