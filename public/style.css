@@ -90,14 +90,8 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .brand{gap:16px;padding:0 2px 32px}
 .brand-stacked{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:0 0 30px}
 .brand-copy{display:block;padding-left:3px}.brand-copy strong{display:block;font-size:22px;line-height:1;letter-spacing:.1px}.brand-copy small{display:block;margin-top:8px;font:600 10px/1 "DM Mono";letter-spacing:2.7px;color:#b9c7c2}
-.medvoice-logo{width:188px;height:94px;padding:0;background:transparent;border:0;box-shadow:none;overflow:visible;flex:0 0 auto}
-.medvoice-logo svg{display:block;width:188px;height:94px}
-.medvoice-logo .logo-bg{fill:url(#mvLogoGlow)}
-.medvoice-logo .logo-med-main{fill:#12362e;font:900 47px/1 "Noto Sans SC",system-ui,sans-serif;letter-spacing:-3.7px}
-.medvoice-logo .logo-v-scope,.medvoice-logo .logo-voice-line,.medvoice-logo .logo-cross{fill:none;stroke-linecap:round;stroke-linejoin:round}
-.medvoice-logo .logo-v-scope,.medvoice-logo .logo-voice-line,.medvoice-logo .logo-diaphragm,.medvoice-logo .logo-v-ear{stroke:#126cbf;stroke-width:4.6;filter:drop-shadow(0 1px 0 rgba(18,108,191,.12))}
-.medvoice-logo .logo-v-ear,.medvoice-logo .logo-diaphragm{fill:#126cbf}.medvoice-logo .logo-diaphragm{fill:none;stroke-width:4}
-.medvoice-logo .logo-voice-line{stroke-width:4.2}.medvoice-logo .logo-cross{stroke:#fff;stroke-width:4;opacity:.92}
+.medvoice-logo{display:block;width:188px;height:116px;padding:0;background:transparent;border:0;border-radius:0;box-shadow:none;overflow:visible;flex:0 0 auto}
+.medvoice-logo img{display:block;width:100%;height:100%;object-fit:contain;object-position:left center;filter:drop-shadow(0 13px 14px rgba(6,27,22,.28))}
 .project-select-wrap{display:block;margin-top:7px;position:relative}
 .project-select-wrap::after{content:"⌄";position:absolute;right:10px;top:50%;transform:translateY(-50%);color:#bad0c8;font-size:11px;pointer-events:none}
 .project-select-wrap select{width:100%;appearance:none;border:0;background:rgba(255,255,255,.02);color:#fff;padding:7px 25px 7px 0;font-size:13px;font-weight:700;outline:0;cursor:pointer}
@@ -105,7 +99,7 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .project-mini-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:11px}
 .project-mini-actions button{border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.055);color:#cfe0da;border-radius:8px;padding:7px 6px;font-size:10px;font-weight:700;cursor:pointer}
 .project-mini-actions button:hover{border-color:rgba(223,242,91,.28);background:rgba(255,255,255,.1);color:#fff}
-@media(max-width:1050px){.medvoice-logo{width:54px;height:38px;flex-basis:54px}.medvoice-logo svg{width:54px;height:38px}.brand-stacked{align-items:center}.brand-copy,.project-mini-actions{display:none}.brand strong,.brand small{font-size:inherit}}
+@media(max-width:1050px){.medvoice-logo{width:54px;height:34px;flex-basis:54px}.medvoice-logo img{width:54px;height:34px}.brand-stacked{align-items:center}.brand-copy,.project-mini-actions{display:none}.brand strong,.brand small{font-size:inherit}}
 
 /* Compact project rename affordance */
 .project-name-row{display:grid;grid-template-columns:minmax(0,1fr) 28px;align-items:center;gap:6px;margin-top:7px}
