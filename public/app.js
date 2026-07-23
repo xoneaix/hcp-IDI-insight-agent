@@ -20,6 +20,7 @@ const state = {
   pendingAfterConnect: null,
   libraryLoaded: false,
   roleProcessing: false,
+  roleProgress: null,
   recording: null,
   currentQuote: null
 };
@@ -1155,13 +1156,23 @@ function renderRoleMapper() {
   $("#selectAllRoleDocs").disabled = state.roleProcessing || !completed.length;
   $("#selectAllRoleDocs").textContent = allRoleDocsSelected ? "取消全选" : "全选";
   $("#exportRoleWord").textContent = selectedForWord.length ? `导出 Word (${selectedForWord.length}) ↗` : "导出 Word ↗";
-  $("#identifyRoles").textContent = state.roleProcessing ? "处理中…" : "✦ 区分角色";
+  const progress = state.roleProgress;
+  const progressPercent = progress ? Math.max(0, Math.min(100, Math.round(progress.percent || 0))) : 0;
+  $("#identifyRoles").textContent = state.roleProcessing ? `处理中 ${progressPercent}%` : "✦ 区分角色";
   $(".role-mapper-panel").classList.toggle("processing", state.roleProcessing);
-  $("#roleSummary").textContent = ready.length
-    ? `${ready.length} 份所选访谈可处理 · ${completed.length} 份已完成角色区分 · ${selectedForWord.length} 份勾选待导出`
-    : completed.length
-      ? `${completed.length} 份已完成角色区分 · ${selectedForWord.length} 份勾选待导出`
-      : "等待所选资料完成转录";
+  $("#roleSummary").textContent = state.roleProcessing && progress
+    ? `正在处理 ${progress.currentName || "所选访谈"} · ${progress.current || 1}/${progress.total || ready.length || 1} · ${progressPercent}%`
+    : ready.length
+      ? `${ready.length} 份所选访谈可处理 · ${completed.length} 份已完成角色区分 · ${selectedForWord.length} 份勾选待导出`
+      : completed.length
+        ? `${completed.length} 份已完成角色区分 · ${selectedForWord.length} 份勾选待导出`
+        : "等待所选资料完成转录";
+  const progressBar = $("#roleProgressBar");
+  if (progressBar) {
+    progressBar.hidden = !state.roleProcessing;
+    progressBar.querySelector("i").style.width = `${progressPercent}%`;
+    progressBar.querySelector("b").textContent = state.roleProcessing ? `${progressPercent}%` : "";
+  }
 
   if (!completed.length) {
     $("#rolePreview").innerHTML = '<div class="empty-compact">完成转录后，选择一份或多份资料并点击“区分所选访谈角色”。</div>';
@@ -1218,25 +1229,48 @@ async function identifySelectedRoles() {
   if (!health) return toast("请先启动 MedVoice 本地服务");
   if (!state.apiConfigured) return openApiSettings(identifySelectedRoles);
   state.roleProcessing = true;
+  state.roleProgress = { total: ready.length, current: 1, currentName: ready[0]?.id || "所选访谈", percent: 3 };
   renderRoleMapper();
+  let completedCount = 0;
+  let ticker = null;
   try {
-    const response = await fetch(`${API_BASE}/api/roles/identify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ documents: ready.map(({ id, name, type, text }) => ({ id, name, type, text })) })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "角色区分失败");
-    for (const result of data.results || []) {
-      const item = state.interviews.find((interview) => interview.id === result.document_id);
-      if (item) { item.roleResult = result; item.roleSelected = true; item.roleExpanded = false; }
+    for (let index = 0; index < ready.length; index += 1) {
+      const item = ready[index];
+      const basePercent = Math.round((index / ready.length) * 100);
+      const ceilingPercent = Math.max(basePercent + 5, Math.round(((index + 0.88) / ready.length) * 100));
+      state.roleProgress = { total: ready.length, current: index + 1, currentName: item.id, percent: Math.max(3, basePercent) };
+      renderRoleMapper();
+      clearInterval(ticker);
+      ticker = setInterval(() => {
+        if (!state.roleProcessing || !state.roleProgress) return;
+        state.roleProgress.percent = Math.min(ceilingPercent, Math.round((state.roleProgress.percent || basePercent) + Math.max(1, 10 / ready.length)));
+        renderRoleMapper();
+      }, 900);
+      const response = await fetch(`${API_BASE}/api/roles/identify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documents: [{ id: item.id, name: item.name, type: item.type, text: item.text }] })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `${item.id} 角色区分失败`);
+      const result = data.results?.[0];
+      if (result) {
+        item.roleResult = result;
+        item.roleSelected = true;
+        item.roleExpanded = false;
+        completedCount += 1;
+        await persistInterview(state.interviews.indexOf(item));
+      }
+      state.roleProgress = { total: ready.length, current: index + 1, currentName: item.id, percent: Math.round(((index + 1) / ready.length) * 100) };
+      renderRoleMapper();
     }
-    await persistAllInterviews();
-    toast(`已完成 ${data.results?.length || 0} 份访谈的角色区分`);
+    toast(`已完成 ${completedCount} 份访谈的角色区分`);
   } catch (error) {
     toast(error.message);
   } finally {
+    clearInterval(ticker);
     state.roleProcessing = false;
+    state.roleProgress = null;
     renderAll();
   }
 }

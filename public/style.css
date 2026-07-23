@@ -84,7 +84,10 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .role-actions .primary-button span{font-size:10px;line-height:1}
 .role-actions .danger-role-button{border-color:#eed5d7;background:#fff;color:#a24a4e}
 .role-actions .danger-role-button:hover{border-color:#d7a5a8;background:#fffafa;color:#88373b}
-@media(max-width:720px){.upload-progress-bar{width:100%}.role-actions .secondary-button,.role-actions .primary-button{min-height:34px}}
+
+.role-progress-bar{position:relative;display:flex;align-items:center;justify-content:flex-end;min-width:150px;height:18px;border-radius:999px;background:rgba(255,255,255,.72);border:1px solid rgba(190,208,201,.72);overflow:hidden;color:#245c4d;font:700 9px "DM Mono",monospace}
+.role-progress-bar[hidden]{display:none}.role-progress-bar i{position:absolute;inset:0 auto 0 0;width:0;background:linear-gradient(90deg,rgba(223,242,91,.55),rgba(88,154,120,.28));transition:width .35s ease}.role-progress-bar b{position:relative;z-index:1;padding:0 8px;font-weight:700}.role-mapper-panel.processing .role-summary{align-items:center}.role-actions #identifyRoles{min-width:98px}
+@media(max-width:720px){.upload-progress-bar{width:100%}.role-progress-bar{min-width:100%;justify-content:center}.role-actions .secondary-button,.role-actions .primary-button{min-height:34px}}
 
 /* Project switcher and MedVoice logo refresh */
 .brand{gap:16px;padding:0 2px 32px}
