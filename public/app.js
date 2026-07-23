@@ -913,9 +913,10 @@ function renderTranscripts() {
       const isMedia = (item.file || item.hasFile) && !/\.(txt|md|csv|json)$/i.test(item.name);
       const actionLabel = isMedia ? (item.text ? "重新转录" : item.status === "转录失败" || item.status === "转换失败" ? "重试" : "转录") : "无需转录";
       const transcribeClass = item.text ? "retranscribe" : item.status === "转录失败" || item.status === "转换失败" ? "retry" : "primary";
-      const canIdentifyRole = Boolean(item.text);
-      const roleActionLabel = item.roleResult ? "重新区分" : "区分角色";
-      const statusClass = item.status.includes("中") || item.status.includes("预处理") ? "processing" : item.status === "转录失败" || item.status === "转换失败" ? "failed" : item.status === "录音已保存" ? "saved" : "";
+      const roleProcessingThis = state.roleProcessing && state.roleProgress?.currentName === item.id;
+      const canIdentifyRole = Boolean(item.text) && !state.roleProcessing;
+      const roleActionLabel = roleProcessingThis ? "处理中" : item.roleResult ? "重新区分" : "区分角色";
+      const statusClass = item.status.includes("中") || item.status.includes("预处理") ? "processing" : item.status === "转录失败" || item.status === "转换失败" || item.status === "角色区分失败" ? "failed" : item.status === "录音已保存" ? "saved" : "";
       const sourceLabel = item.source === "实时录音" ? `实时录音${item.recordedAt ? ` · ${escapeHTML(item.recordedAt)}` : ""}` : item.source === "音频预处理" ? "音频预处理" : "上传文件";
       const fileSize = item.file?.size || item.fileSize || 0;
       const uploadProgress = Number.isFinite(item.uploadProgress) ? Math.min(100, Math.max(0, item.uploadProgress)) : null;
@@ -1160,7 +1161,6 @@ function renderRoleMapper() {
   const selectedForWord = selectedRoleDocuments();
   const allRoleDocsSelected = completed.length > 0 && selectedForWord.length === completed.length;
 
-  $("#identifyRoles").disabled = state.roleProcessing || !ready.length;
   $("#exportRoleWord").disabled = state.roleProcessing || !selectedForWord.length;
   $("#deleteRoleDocs").disabled = state.roleProcessing || !selectedForWord.length;
   $("#selectAllRoleDocs").disabled = state.roleProcessing || !completed.length;
@@ -1168,7 +1168,6 @@ function renderRoleMapper() {
   $("#exportRoleWord").textContent = selectedForWord.length ? `导出 Word (${selectedForWord.length}) ↗` : "导出 Word ↗";
   const progress = state.roleProgress;
   const progressPercent = progress ? Math.max(0, Math.min(100, Math.round(progress.percent || 0))) : 0;
-  $("#identifyRoles").textContent = state.roleProcessing ? `处理中 ${progressPercent}%` : "✦ 区分角色";
   $(".role-mapper-panel").classList.toggle("processing", state.roleProcessing);
   $("#roleSummary").textContent = state.roleProcessing && progress
     ? `正在处理 ${progress.currentName || "所选访谈"} · ${progress.current || 1}/${progress.total || ready.length || 1} · ${progressPercent}%`
@@ -1185,7 +1184,7 @@ function renderRoleMapper() {
   }
 
   if (!completed.length) {
-    $("#rolePreview").innerHTML = '<div class="empty-compact">完成转录后，选择一份或多份资料并点击“区分所选访谈角色”。</div>';
+    $("#rolePreview").innerHTML = '<div class="empty-compact">完成转录后，可在上方“已导入资料”的对应文件行点击“区分角色”。</div>';
     return;
   }
 
@@ -1255,12 +1254,15 @@ async function identifyRolesForItems(ready) {
       const basePercent = Math.round((index / ready.length) * 100);
       const ceilingPercent = Math.max(basePercent + 5, Math.round(((index + 0.88) / ready.length) * 100));
       state.roleProgress = { total: ready.length, current: index + 1, currentName: item.id, percent: Math.max(3, basePercent) };
-      renderRoleMapper();
+      item.status = "角色区分中";
+      item.progressText = `正在区分对话角色（${state.roleProgress.percent}%）`;
+      renderAll();
       clearInterval(ticker);
       ticker = setInterval(() => {
         if (!state.roleProcessing || !state.roleProgress) return;
         state.roleProgress.percent = Math.min(ceilingPercent, Math.round((state.roleProgress.percent || basePercent) + Math.max(1, 10 / ready.length)));
-        renderRoleMapper();
+        item.progressText = `正在区分对话角色（${state.roleProgress.percent}%）`;
+        renderAll();
       }, 900);
       const response = await fetch(`${API_BASE}/api/roles/identify`, {
         method: "POST",
@@ -1268,17 +1270,26 @@ async function identifyRolesForItems(ready) {
         body: JSON.stringify({ documents: [{ id: item.id, name: item.name, type: item.type, text: item.text }] })
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || `${item.id} 角色区分失败`);
+      if (!response.ok) {
+        item.status = "角色区分失败";
+        item.progressText = "角色区分失败，可点击“重新区分”重试。";
+        item.error = humanizeFileTransferError(data.error || `${item.id} 角色区分失败`);
+        await persistInterview(state.interviews.indexOf(item));
+        throw new Error(data.error || `${item.id} 角色区分失败`);
+      }
       const result = data.results?.[0];
       if (result) {
         item.roleResult = result;
         item.roleSelected = true;
         item.roleExpanded = false;
+        item.status = "已转录";
+        item.progressText = "角色区分完成，可在下方预览并导出 Word。";
+        item.error = "";
         completedCount += 1;
         await persistInterview(state.interviews.indexOf(item));
       }
       state.roleProgress = { total: ready.length, current: index + 1, currentName: item.id, percent: Math.round(((index + 1) / ready.length) * 100) };
-      renderRoleMapper();
+      renderAll();
     }
     toast(`已完成 ${completedCount} 份访谈的角色区分`);
   } catch (error) {
@@ -1779,7 +1790,6 @@ $("#recordButton").addEventListener("click", (event) => { event.stopPropagation(
 $("#startRecording").addEventListener("click", startRecording);
 $("#pauseRecording").addEventListener("click", pauseRecording);
 $("#stopRecording").addEventListener("click", stopRecording);
-$("#identifyRoles").addEventListener("click", identifySelectedRoles);
 $("#selectAllRoleDocs").addEventListener("click", () => {
   const completed = roleMappedInterviews();
   const shouldSelectAll = selectedRoleDocuments().length !== completed.length;
