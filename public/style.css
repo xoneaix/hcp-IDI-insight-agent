@@ -101,3 +101,13 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .project-mini-actions button{border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.055);color:#cfe0da;border-radius:8px;padding:7px 6px;font-size:10px;font-weight:700;cursor:pointer}
 .project-mini-actions button:hover{border-color:rgba(223,242,91,.28);background:rgba(255,255,255,.1);color:#fff}
 @media(max-width:1050px){.medvoice-logo svg{width:40px;height:40px}.project-mini-actions{display:none}}
+
+/* Compact project rename affordance */
+.project-name-row{display:grid;grid-template-columns:minmax(0,1fr) 28px;align-items:center;gap:6px;margin-top:7px}
+.project-name-row .project-select-wrap{margin-top:0}
+.project-edit-button{display:grid;place-items:center;width:28px;height:28px;border:1px solid rgba(255,255,255,.14);border-radius:8px;background:rgba(255,255,255,.055);color:#cfe0da;cursor:pointer;padding:0}
+.project-edit-button svg{display:block;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.project-edit-button:hover{border-color:rgba(223,242,91,.34);background:rgba(255,255,255,.11);color:#fff}
+.project-mini-actions{grid-template-columns:1fr}
+.project-mini-actions button{padding:8px 8px}
+@media(max-width:1050px){.project-edit-button{display:none}}
