@@ -914,7 +914,7 @@ function renderRoleMapper() {
           <input class="role-doc-check" type="checkbox" data-index="${itemIndex}" ${item.roleSelected !== false ? "checked" : ""} />
           <strong>${escapeHTML(item.id)} · ${escapeHTML(item.name)}</strong>
         </label>
-        <div class="role-doc-meta"><span>${exchangeCount} 组问答 · ${result.average_confidence || 0}% <button class="confidence-info-button" type="button" aria-label="查看角色区分置信度说明" title="查看角色区分置信度说明">i</button></span><button class="role-toggle" type="button" data-index="${itemIndex}">${item.roleExpanded ? "收起" : "展开预览"}</button></div>
+        <div class="role-doc-meta"><span class="confidence-popover-wrap">${exchangeCount} 组问答 · ${result.average_confidence || 0}% <button class="confidence-info-button" type="button" aria-label="查看角色区分置信度说明" title="查看角色区分置信度说明">i</button><span class="confidence-popover" role="tooltip"><strong>角色区分置信度</strong><em>90% 以上：整体稳定，建议抽查</em><em>80%–90%：可用，重点复核低置信片段</em><em>低于 80%：可能存在说话人混淆、转录质量差或多人插话</em><small>不是医学结论准确率，也不是转录准确率。</small></span></span><button class="role-toggle" type="button" data-index="${itemIndex}">${item.roleExpanded ? "收起" : "展开预览"}</button></div>
       </div>
       ${body}
     </section>`;
@@ -932,7 +932,10 @@ function renderRoleMapper() {
   }));
   $$(".confidence-info-button").forEach((button) => button.addEventListener("click", (event) => {
     event.stopPropagation();
-    $("#roleConfidenceDialog").showModal();
+    const wrap = event.currentTarget.closest(".confidence-popover-wrap");
+    const willOpen = !wrap?.classList.contains("open");
+    $$(".confidence-popover-wrap.open").forEach((item) => item.classList.remove("open"));
+    if (wrap && willOpen) wrap.classList.add("open");
   }));
 }
 
@@ -1400,6 +1403,7 @@ $$(".nav-item").forEach((button) => button.addEventListener("click", () => showV
 $$("[data-view-jump]").forEach((button) => button.addEventListener("click", () => showView(button.dataset.viewJump)));
 $$("[data-insight-filter]").forEach((button) => button.addEventListener("click", () => { $$("[data-insight-filter]").forEach((item) => item.classList.remove("active")); button.classList.add("active"); renderInsights(button.dataset.insightFilter); }));
 $$("dialog .dialog-close").forEach((button) => button.addEventListener("click", () => button.closest("dialog").close()));
+document.addEventListener("click", (event) => { if (!event.target.closest(".confidence-popover-wrap")) $$(".confidence-popover-wrap.open").forEach((item) => item.classList.remove("open")); });
 $("#cancelAnalysis").addEventListener("click", () => $("#analysisDialog").close());
 $("#goCollect").addEventListener("click", () => showView("transcripts"));
 $("#goAnalyze").addEventListener("click", () => showView("outline"));
