@@ -935,7 +935,11 @@ function renderRoleMapper() {
     const wrap = event.currentTarget.closest(".confidence-popover-wrap");
     const willOpen = !wrap?.classList.contains("open");
     $$(".confidence-popover-wrap.open").forEach((item) => item.classList.remove("open"));
-    if (wrap && willOpen) wrap.classList.add("open");
+    $$(".role-document.popover-open").forEach((item) => item.classList.remove("popover-open"));
+    if (wrap && willOpen) {
+      wrap.classList.add("open");
+      wrap.closest(".role-document")?.classList.add("popover-open");
+    }
   }));
 }
 
@@ -1403,7 +1407,12 @@ $$(".nav-item").forEach((button) => button.addEventListener("click", () => showV
 $$("[data-view-jump]").forEach((button) => button.addEventListener("click", () => showView(button.dataset.viewJump)));
 $$("[data-insight-filter]").forEach((button) => button.addEventListener("click", () => { $$("[data-insight-filter]").forEach((item) => item.classList.remove("active")); button.classList.add("active"); renderInsights(button.dataset.insightFilter); }));
 $$("dialog .dialog-close").forEach((button) => button.addEventListener("click", () => button.closest("dialog").close()));
-document.addEventListener("click", (event) => { if (!event.target.closest(".confidence-popover-wrap")) $$(".confidence-popover-wrap.open").forEach((item) => item.classList.remove("open")); });
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".confidence-popover-wrap")) {
+    $$(".confidence-popover-wrap.open").forEach((item) => item.classList.remove("open"));
+    $$(".role-document.popover-open").forEach((item) => item.classList.remove("popover-open"));
+  }
+});
 $("#cancelAnalysis").addEventListener("click", () => $("#analysisDialog").close());
 $("#goCollect").addEventListener("click", () => showView("transcripts"));
 $("#goAnalyze").addEventListener("click", () => showView("outline"));
