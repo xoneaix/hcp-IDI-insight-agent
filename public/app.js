@@ -143,10 +143,22 @@ async function convertInterviewAudio(index) {
     });
     item.status = item.text ? "已转录" : "待转录";
     if (Number.isInteger(audioIndex)) {
-      item.progressText = `已生成轻量 M4A，并自动加入为 ${state.interviews[audioIndex].id} 开始转录。`;
-      await persistInterview(index);
-      toast(`${item.id} 已生成 M4A，正在自动转录轻量音频`, 4500);
-      await transcribeInterview(audioIndex);
+      const audioItem = state.interviews[audioIndex];
+      const originalId = item.id;
+      if (item.serverId) {
+        await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}`, { method: "DELETE" }).catch(() => {});
+      }
+      await deleteLocalInterview(item);
+      state.interviews = state.interviews.filter((candidate) => candidate !== item);
+      const nextAudioIndex = state.interviews.indexOf(audioItem);
+      if (audioItem) {
+        audioItem.progressText = `已由 ${originalId} 自动生成 M4A，原视频已从列表移除，正在转录轻量音频。`;
+        audioItem.selected = true;
+        await persistInterview(nextAudioIndex);
+      }
+      renderAll();
+      toast(`${originalId} 已生成 M4A，原 MP4 已自动移除，正在转录轻量音频`, 5000);
+      if (nextAudioIndex >= 0) await transcribeInterview(nextAudioIndex);
       return;
     }
     item.progressText = `M4A 已生成（${formatFileSize(job.convertedSize || 0)}），但自动加入资料失败；可重新点击“生成 M4A”。`;
