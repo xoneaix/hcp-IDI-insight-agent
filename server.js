@@ -1,6 +1,6 @@
 import http from "node:http";
 import { createReadStream, createWriteStream } from "node:fs";
-import { access, mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { access, appendFile, mkdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, normalize, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -608,9 +608,22 @@ async function handleAnalyze(req, res) {
 
 
 const CONVERSION_JOB_TTL_MS = 2 * 60 * 60 * 1000;
+const CHUNKED_CONVERSION_UPLOAD_TTL_MS = 60 * 60 * 1000;
 const conversionJobs = new Map();
+const chunkedConversionUploads = new Map();
+
+async function cleanupChunkedConversionUploads() {
+  const now = Date.now();
+  for (const [id, upload] of chunkedConversionUploads.entries()) {
+    if (now - upload.updatedAt > CHUNKED_CONVERSION_UPLOAD_TTL_MS) {
+      await rm(upload.dir, { recursive: true, force: true }).catch(() => {});
+      chunkedConversionUploads.delete(id);
+    }
+  }
+}
 
 function cleanupConversionJobs() {
+  cleanupChunkedConversionUploads().catch(() => {});
   const now = Date.now();
   for (const [id, job] of conversionJobs.entries()) {
     if (now - job.updatedAt > CONVERSION_JOB_TTL_MS) {
@@ -689,6 +702,69 @@ async function createConversionJob({ req, res, sourcePath, originalName, origina
   conversionJobs.set(id, job);
   runConversionJob(id);
   return json(res, 202, publicConversionJob(job));
+}
+
+async function handleChunkedConvertAudioStart(req, res) {
+  cleanupConversionJobs();
+  const payload = await readJson(req, 100_000).catch(() => ({}));
+  const originalName = String(payload.filename || "interview-video.mp4").slice(0, 240);
+  const fileSize = Number(payload.size || 0);
+  const chunkCount = Math.max(1, Math.min(2000, Number(payload.chunkCount || 1)));
+  const id = randomUUID();
+  const dir = join(JOB_DIR, `medvoice-convert-chunks-${id}`);
+  await mkdir(dir, { recursive: true });
+  chunkedConversionUploads.set(id, {
+    id,
+    userId: req.user?.id,
+    dir,
+    originalName,
+    fileSize,
+    chunkCount,
+    received: new Set(),
+    receivedBytes: 0,
+    startedAt: Date.now(),
+    updatedAt: Date.now()
+  });
+  return json(res, 200, { id, chunkCount, message: "已创建大文件分片上传任务" });
+}
+
+async function handleChunkedConvertAudioChunk(req, res, id) {
+  cleanupConversionJobs();
+  const upload = chunkedConversionUploads.get(id);
+  if (!upload || (upload.userId && req.user?.id && upload.userId !== req.user.id)) return json(res, 404, { error: "分片上传任务不存在或已过期，请重新点击生成 M4A" });
+  const index = Number(req.headers["x-chunk-index"]);
+  if (!Number.isInteger(index) || index < 0 || index >= upload.chunkCount) return json(res, 400, { error: "分片序号无效" });
+  const partPath = join(upload.dir, `${index}.part`);
+  await unlink(partPath).catch(() => {});
+  const size = await streamUploadToFile(req, partPath);
+  if (!upload.received.has(index)) upload.received.add(index);
+  upload.receivedBytes += size;
+  upload.updatedAt = Date.now();
+  return json(res, 200, { received: upload.received.size, chunkCount: upload.chunkCount });
+}
+
+async function handleChunkedConvertAudioComplete(req, res, id) {
+  cleanupConversionJobs();
+  const upload = chunkedConversionUploads.get(id);
+  if (!upload || (upload.userId && req.user?.id && upload.userId !== req.user.id)) return json(res, 404, { error: "分片上传任务不存在或已过期，请重新点击生成 M4A" });
+  if (upload.received.size !== upload.chunkCount) return json(res, 409, { error: `仍有 ${upload.chunkCount - upload.received.size} 个分片未上传完成` });
+  const sourcePath = join(JOB_DIR, `medvoice-convert-source-${id}${safeUploadSuffix(upload.originalName)}`);
+  await unlink(sourcePath).catch(() => {});
+  let originalSize = 0;
+  try {
+    for (let index = 0; index < upload.chunkCount; index += 1) {
+      const partPath = join(upload.dir, `${index}.part`);
+      const part = await readFile(partPath);
+      originalSize += part.length;
+      await appendFile(sourcePath, part);
+    }
+    await rm(upload.dir, { recursive: true, force: true }).catch(() => {});
+    chunkedConversionUploads.delete(id);
+    return createConversionJob({ req, res, sourcePath, originalName: upload.originalName, originalSize, removeSource: true });
+  } catch (error) {
+    await unlink(sourcePath).catch(() => {});
+    throw new Error(`大文件分片合并失败：${error.message || "请重试"}`);
+  }
 }
 
 async function handleConvertAudioJobStart(req, res) {
@@ -1326,6 +1402,11 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith("/api/library/")) return await handleLibrary(req, res, url.pathname);
     if (req.method === "POST" && url.pathname === "/api/media/convert-audio") return await handleConvertAudio(req, res);
     if (req.method === "POST" && url.pathname === "/api/media/convert-audio/jobs") return await handleConvertAudioJobStart(req, res);
+    if (req.method === "POST" && url.pathname === "/api/media/convert-audio/chunked/start") return await handleChunkedConvertAudioStart(req, res);
+    const chunkedConvertChunkMatch = url.pathname.match(/^\/api\/media\/convert-audio\/chunked\/([^/]+)\/chunks$/);
+    if (req.method === "POST" && chunkedConvertChunkMatch) return await handleChunkedConvertAudioChunk(req, res, chunkedConvertChunkMatch[1]);
+    const chunkedConvertCompleteMatch = url.pathname.match(/^\/api\/media\/convert-audio\/chunked\/([^/]+)\/complete$/);
+    if (req.method === "POST" && chunkedConvertCompleteMatch) return await handleChunkedConvertAudioComplete(req, res, chunkedConvertCompleteMatch[1]);
     const convertJobDownloadMatch = url.pathname.match(/^\/api\/media\/convert-audio\/jobs\/([^/]+)\/download$/);
     if (req.method === "GET" && convertJobDownloadMatch) return await handleConvertAudioJobDownload(req, res, convertJobDownloadMatch[1]);
     const convertJobMatch = url.pathname.match(/^\/api\/media\/convert-audio\/jobs\/([^/]+)$/);

@@ -23,6 +23,8 @@ const WORKSPACE_URL = location.protocol === "file:" ? "index.html" : "/";
 const ADMIN_URL = location.protocol === "file:" ? "admin.html" : "/admin";
 const LOGIN_URL = location.protocol === "file:" ? `${API_BASE}/login` : "/login";
 const VIEW_STORAGE_KEY = "medvoice.activeView";
+const LARGE_CONVERSION_CHUNK_THRESHOLD = 80 * 1024 * 1024;
+const CONVERSION_CHUNK_SIZE = 8 * 1024 * 1024;
 const LOCAL_DB_NAME = "medvoice-interview-library";
 const LOCAL_DB_VERSION = 1;
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -96,6 +98,51 @@ async function downloadConversionResult(job, options = {}) {
   return { outputName, blob };
 }
 
+function humanizeFileTransferError(message = "") {
+  if (/failed to fetch|networkerror|load failed|network request failed/i.test(message)) {
+    return "网络或大文件上传连接中断。当前资料已保留本机备份；请等待网络稳定后重试，系统会对大视频自动分片上传。";
+  }
+  if (/413|too large|content too large|payload too large|request entity too large/i.test(message)) {
+    return "文件体积较大，服务器拒绝了单次上传。请点击“生成 M4A 并转录”，系统会使用分片上传。";
+  }
+  return message || "未知错误";
+}
+
+async function uploadChunkedConversionJob(file, item) {
+  const chunkCount = Math.ceil(file.size / CONVERSION_CHUNK_SIZE);
+  item.progressText = `大视频将分为 ${chunkCount} 片上传后生成 M4A`;
+  renderTranscripts();
+  const startResponse = await fetch(`${API_BASE}/api/media/convert-audio/chunked/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename: file.name, mimeType: file.type, size: file.size, chunkCount })
+  });
+  const start = await startResponse.json().catch(() => ({}));
+  if (!startResponse.ok) throw new Error(start.error || "创建分片上传任务失败");
+  for (let index = 0; index < chunkCount; index += 1) {
+    const begin = index * CONVERSION_CHUNK_SIZE;
+    const chunk = file.slice(begin, Math.min(file.size, begin + CONVERSION_CHUNK_SIZE), "application/octet-stream");
+    item.progressText = `正在分片上传视频用于音频预处理（${index + 1}/${chunkCount} · ${Math.round(((index + 1) / chunkCount) * 100)}%）`;
+    renderTranscripts();
+    const chunkResponse = await fetch(`${API_BASE}/api/media/convert-audio/chunked/${encodeURIComponent(start.id)}/chunks`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-Chunk-Index": String(index)
+      },
+      body: chunk
+    });
+    const chunkData = await chunkResponse.json().catch(() => ({}));
+    if (!chunkResponse.ok) throw new Error(chunkData.error || `第 ${index + 1} 个分片上传失败`);
+  }
+  item.progressText = "视频分片上传完成，正在合并并创建 M4A 转换任务";
+  renderTranscripts();
+  const completeResponse = await fetch(`${API_BASE}/api/media/convert-audio/chunked/${encodeURIComponent(start.id)}/complete`, { method: "POST" });
+  const completed = await completeResponse.json().catch(() => ({}));
+  if (!completeResponse.ok) throw new Error(completed.error || "分片合并失败");
+  return completed;
+}
+
 function isVideoInterview(item) {
   return /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(item.name || item.fileName || "") || /^video\//i.test(item.mimeType || item.file?.type || "");
 }
@@ -110,23 +157,29 @@ async function convertInterviewAudio(index) {
   item.status = "音频预处理中";
   renderTranscripts();
   try {
-    let response;
+    let started;
     if (item.serverId) {
-      response = await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}/convert-audio/jobs`, { method: "POST" });
+      const response = await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}/convert-audio/jobs`, { method: "POST" });
+      started = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(started.error || `创建转换任务失败（HTTP ${response.status}）`);
     } else if (item.file) {
-      response = await fetch(`${API_BASE}/api/media/convert-audio/jobs`, {
-        method: "POST",
-        headers: {
-          "Content-Type": item.file.type || "application/octet-stream",
-          "X-Filename": encodeURIComponent(item.file.name)
-        },
-        body: item.file
-      });
+      if ((item.file.size || 0) >= LARGE_CONVERSION_CHUNK_THRESHOLD) {
+        started = await uploadChunkedConversionJob(item.file, item);
+      } else {
+        const response = await fetch(`${API_BASE}/api/media/convert-audio/jobs`, {
+          method: "POST",
+          headers: {
+            "Content-Type": item.file.type || "application/octet-stream",
+            "X-Filename": encodeURIComponent(item.file.name)
+          },
+          body: item.file
+        });
+        started = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(started.error || `创建转换任务失败（HTTP ${response.status}）`);
+      }
     } else {
       throw new Error("没有可转换的原始文件，请重新上传视频");
     }
-    const started = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(started.error || `创建转换任务失败（HTTP ${response.status}）`);
     item.progressText = started.message || "转换任务已创建，正在提取音轨";
     renderTranscripts();
     const job = await pollConversionJob(started.id, (job) => {
@@ -165,8 +218,8 @@ async function convertInterviewAudio(index) {
   } catch (error) {
     item.status = "转换失败";
     item.progressText = "转换错误已保留，可点击“生成 M4A”重试";
-    item.error = error.message;
-    toast(`转换失败：${error.message}`, 7000);
+    item.error = humanizeFileTransferError(error.message);
+    toast(`转换失败：${item.error}`, 7000);
   }
   await persistInterview(index);
   renderAll();
@@ -501,8 +554,8 @@ async function persistInterview(index) {
     item.persistError = "";
     await saveLocalInterview(index);
   } catch (error) {
-    item.persistError = error.message;
-    toast(`资料未能保存到账户：${error.message}`, 6000);
+    item.persistError = humanizeFileTransferError(error.message);
+    toast(`资料未能保存到账户：${item.persistError}`, 6000);
   } finally {
     item.persisting = false;
   }
@@ -659,7 +712,7 @@ function renderTranscripts() {
       const fileSize = item.file?.size || item.fileSize || 0;
       return `<tr>
         <td><input class="row-check" type="checkbox" data-index="${index}" ${item.selected ? "checked" : ""} aria-label="选择 ${escapeHTML(item.id)}" /></td>
-        <td><strong>${escapeHTML(item.id)} · ${escapeHTML(item.name)}</strong><small class="${fileSize > 24 * 1024 * 1024 && !item.text ? "large-file-note" : "file-size-note"}">${item.roleResult ? "已区分角色 · 可导出问答 Word" : item.text ? "已建立逐字稿" : fileSize > 24 * 1024 * 1024 ? `${formatFileSize(fileSize)} · 服务端提取音轨并自动分片` : `${formatFileSize(fileSize)} · 等待语音转录`}${item.persisted ? " · 已保存到账户" : item.localPersisted ? " · 已保存本机备份" : item.persisting ? " · 保存中" : ""}</small><span class="source-badge ${item.source === "实时录音" ? "live" : ""}">${sourceLabel}</span>${item.error ? `<small class="file-error">失败原因：${escapeHTML(item.error)}</small>` : ""}${item.persistError ? `<small class="file-error">保存提示：${escapeHTML(item.persistError)}</small>` : ""}${item.localPersistError ? `<small class="file-error">本机备份提示：${escapeHTML(item.localPersistError)}</small>` : ""}</td>
+        <td><strong>${escapeHTML(item.id)} · ${escapeHTML(item.name)}</strong><small class="${fileSize > 24 * 1024 * 1024 && !item.text ? "large-file-note" : "file-size-note"}">${item.roleResult ? "已区分角色 · 可导出问答 Word" : item.text ? "已建立逐字稿" : fileSize > 24 * 1024 * 1024 ? `${formatFileSize(fileSize)} · 服务端提取音轨并自动分片` : `${formatFileSize(fileSize)} · 等待语音转录`}${item.persisted ? " · 已保存到账户" : item.localPersisted ? " · 已保存本机备份" : item.persisting ? " · 保存中" : ""}</small><span class="source-badge ${item.source === "实时录音" ? "live" : ""}">${sourceLabel}</span>${item.error ? `<small class="file-error">失败原因：${escapeHTML(humanizeFileTransferError(item.error))}</small>` : ""}${item.persistError ? `<small class="file-error">保存提示：${escapeHTML(humanizeFileTransferError(item.persistError))}</small>` : ""}${item.localPersistError ? `<small class="file-error">本机备份提示：${escapeHTML(humanizeFileTransferError(item.localPersistError))}</small>` : ""}</td>
         <td><select class="type-select" data-index="${index}" aria-label="受访者类型"><option value="HCP" ${normalizeRespondentType(item.type) === "HCP" ? "selected" : ""}>HCP</option><option value="Patient" ${normalizeRespondentType(item.type) === "Patient" ? "selected" : ""}>Patient</option></select></td>
         <td>${escapeHTML(item.duration)}</td>
         <td><span class="status-pill ${statusClass}">${escapeHTML(item.status)}</span>${item.progressText ? `<small class="transcript-progress">${escapeHTML(item.progressText)}</small>` : ""}</td>
