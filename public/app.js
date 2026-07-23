@@ -839,32 +839,76 @@ async function transcribeInterview(index) {
   renderAll();
 }
 
+function roleMappedInterviews() {
+  return state.interviews.filter((item) => item.roleResult);
+}
+
+function selectedRoleDocuments() {
+  return roleMappedInterviews().filter((item) => item.roleSelected !== false);
+}
+
 function renderRoleMapper() {
   const selected = selectedInterviews();
   const ready = selected.filter((item) => item.text);
-  const completed = selected.filter((item) => item.roleResult);
+  const completed = roleMappedInterviews();
+  const selectedForWord = selectedRoleDocuments();
+  const allRoleDocsSelected = completed.length > 0 && selectedForWord.length === completed.length;
+
   $("#identifyRoles").disabled = state.roleProcessing || !ready.length;
-  $("#exportRoleWord").disabled = state.roleProcessing || !completed.length;
+  $("#exportRoleWord").disabled = state.roleProcessing || !selectedForWord.length;
+  $("#selectAllRoleDocs").disabled = state.roleProcessing || !completed.length;
+  $("#selectAllRoleDocs").textContent = allRoleDocsSelected ? "取消全选" : "全选 Word";
+  $("#exportRoleWord").textContent = selectedForWord.length ? `导出所选 Word (${selectedForWord.length}) ↗` : "导出所选 Word ↗";
   $("#identifyRoles").textContent = state.roleProcessing ? "正在理解对话角色…" : "✦ 区分所选访谈角色";
   $(".role-mapper-panel").classList.toggle("processing", state.roleProcessing);
   $("#roleSummary").textContent = ready.length
-    ? `${ready.length} 份所选访谈可处理 · ${completed.length} 份已完成角色区分`
-    : "等待所选资料完成转录";
-  const results = state.interviews.filter((item) => item.roleResult && (item.selected || !completed.length));
-  if (!results.length) {
+    ? `${ready.length} 份所选访谈可处理 · ${completed.length} 份已完成角色区分 · ${selectedForWord.length} 份勾选待导出`
+    : completed.length
+      ? `${completed.length} 份已完成角色区分 · ${selectedForWord.length} 份勾选待导出`
+      : "等待所选资料完成转录";
+
+  if (!completed.length) {
     $("#rolePreview").innerHTML = '<div class="empty-compact">完成转录后，选择一份或多份资料并点击“区分所选访谈角色”。</div>';
     return;
   }
-  $("#rolePreview").innerHTML = results.slice(0, 3).map((item) => {
+
+  $("#rolePreview").innerHTML = completed.map((item, itemIndex) => {
+    if (item.roleSelected === undefined) item.roleSelected = true;
+    if (item.roleExpanded === undefined) item.roleExpanded = false;
     const result = item.roleResult;
-    const previews = (result.exchanges || []).slice(0, 3).map((exchange, index) => `<div class="qa-preview">
+    const exchangeCount = result.exchanges?.length || 0;
+    const previewCount = Math.min(exchangeCount, 3);
+    const previews = item.roleExpanded ? (result.exchanges || []).slice(0, 3).map((exchange, index) => `<div class="qa-preview">
       <label class="${exchange.needs_review ? "review-tag" : ""}">Q${String(index + 1).padStart(2, "0")} · 访谈员${exchange.question_timestamp ? ` · ${escapeHTML(exchange.question_timestamp)}` : ""}${exchange.needs_review ? " · 待复核" : ""}</label>
       <p>${escapeHTML(exchange.question || "（未识别到完整提问）")}</p>
       <label>A · ${escapeHTML(result.respondent_label)}${exchange.answer_timestamp ? ` · ${escapeHTML(exchange.answer_timestamp)}` : ""}</label>
       <p>${escapeHTML(exchange.answer || "（未识别到完整回答）")}</p>
-    </div>`).join("");
-    return `<section class="role-document"><div class="role-document-head"><strong>${escapeHTML(item.id)} · ${escapeHTML(item.name)}</strong><span>${result.exchanges?.length || 0} 组问答 · ${result.average_confidence || 0}%</span></div>${previews || '<div class="role-more">未形成完整问答，请检查待确认发言。</div>'}${result.exchanges?.length > 3 ? `<div class="role-more">另有 ${result.exchanges.length - 3} 组问答，将完整写入 Word。</div>` : ""}</section>`;
+    </div>`).join("") : "";
+    const body = item.roleExpanded
+      ? `${previews || '<div class="role-more">未形成完整问答，请检查待确认发言。</div>'}${exchangeCount > previewCount ? `<div class="role-more">另有 ${exchangeCount - previewCount} 组问答，将完整写入 Word。</div>` : ""}`
+      : `<div class="role-more role-collapsed-note">已折叠预览 · ${exchangeCount ? `点击展开查看前 ${previewCount} 组问答` : "未形成完整问答"} · Word 会导出完整内容</div>`;
+    return `<section class="role-document ${item.roleExpanded ? "expanded" : "collapsed"}">
+      <div class="role-document-head">
+        <label class="role-doc-select">
+          <input class="role-doc-check" type="checkbox" data-index="${itemIndex}" ${item.roleSelected !== false ? "checked" : ""} />
+          <strong>${escapeHTML(item.id)} · ${escapeHTML(item.name)}</strong>
+        </label>
+        <div class="role-doc-meta"><span>${exchangeCount} 组问答 · ${result.average_confidence || 0}%</span><button class="role-toggle" type="button" data-index="${itemIndex}">${item.roleExpanded ? "收起" : "展开预览"}</button></div>
+      </div>
+      ${body}
+    </section>`;
   }).join("");
+
+  $$(".role-doc-check").forEach((checkbox) => checkbox.addEventListener("change", (event) => {
+    const item = roleMappedInterviews()[+event.currentTarget.dataset.index];
+    if (item) item.roleSelected = event.currentTarget.checked;
+    renderRoleMapper();
+  }));
+  $$(".role-toggle").forEach((button) => button.addEventListener("click", (event) => {
+    const item = roleMappedInterviews()[+event.currentTarget.dataset.index];
+    if (item) item.roleExpanded = !item.roleExpanded;
+    renderRoleMapper();
+  }));
 }
 
 async function identifySelectedRoles() {
@@ -885,7 +929,7 @@ async function identifySelectedRoles() {
     if (!response.ok) throw new Error(data.error || "角色区分失败");
     for (const result of data.results || []) {
       const item = state.interviews.find((interview) => interview.id === result.document_id);
-      if (item) item.roleResult = result;
+      if (item) { item.roleResult = result; item.roleSelected = true; item.roleExpanded = false; }
     }
     await persistAllInterviews();
     toast(`已完成 ${data.results?.length || 0} 份访谈的角色区分`);
@@ -898,8 +942,8 @@ async function identifySelectedRoles() {
 }
 
 async function exportRoleWord() {
-  const documents = selectedInterviews().map((item) => item.roleResult).filter(Boolean);
-  if (!documents.length) return toast("请先完成所选访谈的角色区分");
+  const documents = selectedRoleDocuments().map((item) => item.roleResult).filter(Boolean);
+  if (!documents.length) return toast("请先勾选至少一份已完成角色区分的访谈");
   toast("正在生成一问一答 Word…");
   try {
     const response = await fetch(`${API_BASE}/api/export/role-docx`, {
@@ -1357,6 +1401,12 @@ $("#startRecording").addEventListener("click", startRecording);
 $("#pauseRecording").addEventListener("click", pauseRecording);
 $("#stopRecording").addEventListener("click", stopRecording);
 $("#identifyRoles").addEventListener("click", identifySelectedRoles);
+$("#selectAllRoleDocs").addEventListener("click", () => {
+  const completed = roleMappedInterviews();
+  const shouldSelectAll = selectedRoleDocuments().length !== completed.length;
+  completed.forEach((item) => { item.roleSelected = shouldSelectAll; });
+  renderRoleMapper();
+});
 $("#exportRoleWord").addEventListener("click", exportRoleWord);
 $("#browseOutline").addEventListener("click", (event) => { event.stopPropagation(); $("#outlineFile").click(); });
 $("#outlineUpload").addEventListener("click", (event) => { if (!event.target.closest("button")) $("#outlineFile").click(); });

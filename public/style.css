@@ -61,3 +61,8 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .table-actions .danger-text{color:#9d464a!important}.table-actions .danger-text:hover{color:#7f3034!important}
 
 .transcript-progress{line-height:1.55}
+
+
+/* Role mapper selection + collapsible preview */
+.role-doc-select{display:flex;align-items:center;gap:9px;min-width:0}.role-doc-select input{width:14px;height:14px;accent-color:var(--green);flex:0 0 auto}.role-doc-select strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.role-doc-meta{display:flex;align-items:center;gap:10px;flex-shrink:0}.role-toggle{border:1px solid #d8dfdb;background:#fff;color:var(--green);border-radius:8px;padding:6px 9px;font-size:9px;font-weight:700;cursor:pointer}.role-toggle:hover{border-color:#adc0b8;background:#f8fbf9}.role-document.collapsed .role-document-head{border-bottom:0}.role-collapsed-note{background:#fbfcfb;color:#74807b}.role-actions .secondary-button{white-space:nowrap}.role-actions #selectAllRoleDocs{color:var(--green)}
+@media(max-width:720px){.role-document-head{align-items:flex-start}.role-doc-meta{display:grid;justify-items:end}.role-doc-select strong{white-space:normal}.role-actions .secondary-button,.role-actions .primary-button{width:100%}}
