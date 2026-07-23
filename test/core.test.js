@@ -24,10 +24,12 @@ test("maskSensitiveText masks common identifiers",()=>{
 });
 
 test("validateAnalysisPayload keeps patient type and outline questions",()=>{
-  const data=validateAnalysisPayload({outline:"1. 患者如何做出治疗决定？",documents:[{id:"P1",type:"患者",text:"  有效内容  "}]});
-  assert.equal(data.documents[0].type,"患者");
-  assert.equal(data.documents[0].text,"有效内容");
-  assert.equal(data.questions.length,1);
+  const cn=validateAnalysisPayload({outline:"1. 患者如何做出治疗决定？",documents:[{id:"P1",type:"患者",text:"  有效内容  "}]});
+  assert.equal(cn.documents[0].type,"Patient");
+  assert.equal(cn.documents[0].text,"有效内容");
+  assert.equal(cn.questions.length,1);
+  const en=validateAnalysisPayload({outline:"1. How does the patient make decisions?",documents:[{id:"Patient-001",type:"Patient",text:"valid text"}]});
+  assert.equal(en.documents[0].type,"Patient");
 });
 
 test("validateAnalysisPayload rejects empty documents",()=>{

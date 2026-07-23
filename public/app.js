@@ -271,7 +271,15 @@ async function clearApiSettings() {
 }
 
 function normalizeRespondentType(type) {
-  return type === "Patient" || type === "患者" ? "Patient" : "HCP";
+  const value = String(type || "").trim().toLowerCase();
+  return value === "patient" || value === "患者" ? "Patient" : "HCP";
+}
+
+function inferRespondentType(type, id = "", name = "") {
+  const normalized = normalizeRespondentType(type);
+  const label = `${id || ""} ${name || ""}`.trim();
+  if (normalized === "HCP" && /^patient-\d+/i.test(label)) return "Patient";
+  return normalized;
 }
 
 function respondentPrefix(type) {
@@ -312,7 +320,7 @@ function interviewPayload(item) {
   return {
     clientId: item.id,
     name: item.name,
-    type: item.type,
+    type: normalizeRespondentType(item.type),
     source: item.source,
     recordedAt: item.recordedAt || "",
     durationSeconds: item.durationSeconds,
@@ -418,7 +426,7 @@ function itemFromLocalRecord(record) {
     id: meta.clientId || "HCP-001",
     serverId: record.serverId || "",
     name: meta.name || record.fileName || "访谈资料",
-    type: normalizeRespondentType(meta.type),
+    type: inferRespondentType(meta.type, meta.clientId, meta.name || record.fileName),
     duration: Number.isFinite(Number(meta.durationSeconds)) ? formatDuration(Number(meta.durationSeconds)) : "—",
     durationSeconds: Number.isFinite(Number(meta.durationSeconds)) ? Number(meta.durationSeconds) : null,
     status: meta.status || "待转录",
@@ -503,7 +511,7 @@ async function loadInterviewLibrary() {
       id: item.id,
       serverId: item.serverId,
       name: item.name,
-      type: item.type,
+      type: inferRespondentType(item.type, item.id, item.name),
       duration: item.duration,
       durationSeconds: item.durationSeconds,
       status: item.status,
