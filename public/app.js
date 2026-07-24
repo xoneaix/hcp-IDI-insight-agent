@@ -1356,6 +1356,44 @@ async function identifyRoleForInterview(index) {
   await identifyRolesForItems([item]);
 }
 
+async function pollRoleIdentifyJob(jobId, item, current, total) {
+  let transientFailures = 0;
+  for (;;) {
+    await delay(1800);
+    let response;
+    let job;
+    try {
+      response = await fetch(`${API_BASE}/api/roles/identify/jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+      job = await response.json().catch(() => ({}));
+    } catch (error) {
+      transientFailures += 1;
+      item.progressText = `读取角色区分进度时短暂中断，正在自动重试 ${transientFailures}/8；请暂时不要重复点击。`;
+      renderAll();
+      if (transientFailures < 8) continue;
+      throw error;
+    }
+    if (!response.ok) {
+      transientFailures += response.status >= 500 ? 1 : 8;
+      if (transientFailures < 8) {
+        item.progressText = `服务器正在恢复角色区分任务，自动重试 ${transientFailures}/8。`;
+        renderAll();
+        continue;
+      }
+      throw new Error(job.error?.message || job.error || "无法读取角色区分进度");
+    }
+    transientFailures = 0;
+    const percent = Number.isFinite(job.progress) ? Math.max(0, Math.min(100, Math.round(job.progress))) : 0;
+    const batchText = job.batchCount ? ` · ${job.batchIndex || 0}/${job.batchCount} 批` : "";
+    const message = job.message || "正在区分对话角色";
+    state.roleProgress = { total, current, currentName: item.id, percent };
+    item.status = job.status === "failed" ? "角色区分失败" : "角色区分中";
+    item.progressText = `${message}（${percent}%${batchText}）`;
+    renderAll();
+    if (job.status === "completed") return job.results?.[0];
+    if (job.status === "failed") throw new Error(job.error || "角色区分失败");
+  }
+}
+
 async function identifyRolesForItems(ready) {
   if (!ready.length) return toast("请先选择至少一份已转录访谈");
   const health = await checkHealth();
@@ -1365,24 +1403,14 @@ async function identifyRolesForItems(ready) {
   state.roleProgress = { total: ready.length, current: 1, currentName: ready[0]?.id || "所选访谈", percent: 3 };
   renderRoleMapper();
   let completedCount = 0;
-  let ticker = null;
   try {
     for (let index = 0; index < ready.length; index += 1) {
       const item = ready[index];
-      const basePercent = Math.round((index / ready.length) * 100);
-      const ceilingPercent = Math.max(basePercent + 5, Math.round(((index + 0.88) / ready.length) * 100));
-      state.roleProgress = { total: ready.length, current: index + 1, currentName: item.id, percent: Math.max(3, basePercent) };
+      state.roleProgress = { total: ready.length, current: index + 1, currentName: item.id, percent: 1 };
       item.status = "角色区分中";
-      item.progressText = `正在区分对话角色（${state.roleProgress.percent}%）`;
+      item.progressText = "正在创建角色区分任务（1%）";
       renderAll();
-      clearInterval(ticker);
-      ticker = setInterval(() => {
-        if (!state.roleProcessing || !state.roleProgress || item.status !== "角色区分中") return;
-        state.roleProgress.percent = Math.min(ceilingPercent, Math.round((state.roleProgress.percent || basePercent) + Math.max(1, 10 / ready.length)));
-        item.progressText = `正在区分对话角色（${state.roleProgress.percent}%）`;
-        renderAll();
-      }, 900);
-      const response = await fetch(`${API_BASE}/api/roles/identify`, {
+      const response = await fetch(`${API_BASE}/api/roles/identify/jobs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ documents: [{ id: item.id, name: item.name, type: item.type, text: item.text }] })
@@ -1395,9 +1423,7 @@ async function identifyRolesForItems(ready) {
         await persistInterview(state.interviews.indexOf(item));
         throw new Error(data.error || `${item.id} 角色区分失败`);
       }
-      clearInterval(ticker);
-      ticker = null;
-      const result = data.results?.[0];
+      const result = data.status === "completed" ? data.results?.[0] : await pollRoleIdentifyJob(data.id, item, index + 1, ready.length);
       if (result) {
         item.roleResult = result;
         item.roleSelected = true;
@@ -1415,7 +1441,6 @@ async function identifyRolesForItems(ready) {
   } catch (error) {
     toast(error.message);
   } finally {
-    clearInterval(ticker);
     state.roleProcessing = false;
     state.roleProgress = null;
     renderAll();

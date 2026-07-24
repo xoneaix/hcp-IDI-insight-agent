@@ -278,13 +278,28 @@ async function identifyRoleBatch(document, turns) {
   return safeJsonParse(extractResponseText(response));
 }
 
-async function identifyDocumentRoles(document) {
+async function identifyDocumentRoles(document, options = {}) {
+  const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
   const turns = parseTranscriptTurns(document.text);
   if (!turns.length) throw new Error(`${document.id} 没有可识别的转录行`);
   const batchSize = 140;
   const batches = [];
   for (let index = 0; index < turns.length; index += batchSize) batches.push(turns.slice(index, index + batchSize));
-  const batchResults = await runWithConcurrency(batches, Math.min(3, MAX_CONCURRENCY), (batch) => identifyRoleBatch(document, batch));
+  let completedBatches = 0;
+  onProgress({ stage: "splitting", progress: 6, batchIndex: 0, batchCount: batches.length, message: `已拆分为 ${batches.length} 批语句，准备开始角色判断` });
+  const batchResults = await runWithConcurrency(batches, Math.min(3, MAX_CONCURRENCY), async (batch, batchIndex) => {
+    const result = await identifyRoleBatch(document, batch);
+    completedBatches += 1;
+    onProgress({
+      stage: "mapping",
+      progress: Math.min(92, 8 + Math.round((completedBatches / batches.length) * 82)),
+      batchIndex: completedBatches,
+      batchCount: batches.length,
+      message: `已完成 ${completedBatches}/${batches.length} 批角色判断`
+    });
+    return result;
+  });
+  onProgress({ stage: "structuring", progress: 96, batchIndex: batches.length, batchCount: batches.length, message: "正在合并问答结构并计算置信度" });
   const assignments = batchResults.flatMap((result) => result.assignments || []);
   const structured = buildRoleExchanges(turns, assignments, ["患者", "Patient"].includes(document.type) ? "Patient/受访者" : "HCP/受访者");
   return {
@@ -590,6 +605,131 @@ async function handleIdentifyRoles(req, res) {
   });
   const results = await runWithConcurrency(documents, Math.min(2, MAX_CONCURRENCY), identifyDocumentRoles);
   json(res, 200, { results, model: MAP_MODEL });
+}
+
+const ROLE_JOB_TTL_MS = 2 * 60 * 60 * 1000;
+const roleJobs = new Map();
+
+function cleanupRoleJobs() {
+  const now = Date.now();
+  for (const [id, job] of roleJobs.entries()) {
+    if (now - job.updatedAt > ROLE_JOB_TTL_MS) roleJobs.delete(id);
+  }
+}
+
+function publicRoleJob(job) {
+  return {
+    id: job.id,
+    status: job.status,
+    stage: job.stage,
+    progress: job.progress,
+    documentIndex: job.documentIndex,
+    documentCount: job.documentCount,
+    batchIndex: job.batchIndex,
+    batchCount: job.batchCount,
+    currentName: job.currentName,
+    message: job.message,
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt,
+    results: job.status === "completed" ? job.results : undefined,
+    error: job.status === "failed" ? job.error : undefined
+  };
+}
+
+function updateRoleJob(id, patch) {
+  const job = roleJobs.get(id);
+  if (!job) return;
+  Object.assign(job, patch, { updatedAt: Date.now() });
+}
+
+async function runRoleIdentifyJob(jobId, documents) {
+  try {
+    const results = [];
+    for (let index = 0; index < documents.length; index += 1) {
+      const document = documents[index];
+      const documentBase = Math.round((index / documents.length) * 100);
+      const documentSpan = 100 / documents.length;
+      updateRoleJob(jobId, {
+        status: "running",
+        stage: "queued",
+        documentIndex: index + 1,
+        documentCount: documents.length,
+        currentName: document.id,
+        progress: Math.max(2, documentBase),
+        message: `正在准备 ${document.id} 的角色区分`
+      });
+      const result = await identifyDocumentRoles(document, {
+        onProgress: (progress) => updateRoleJob(jobId, {
+          status: "running",
+          ...progress,
+          documentIndex: index + 1,
+          documentCount: documents.length,
+          currentName: document.id,
+          progress: Math.min(99, Math.round(documentBase + (Number(progress.progress || 0) / 100) * documentSpan))
+        })
+      });
+      results.push(result);
+      updateRoleJob(jobId, {
+        status: "running",
+        stage: "document-completed",
+        documentIndex: index + 1,
+        documentCount: documents.length,
+        currentName: document.id,
+        progress: Math.min(99, Math.round(((index + 1) / documents.length) * 100)),
+        message: `${document.id} 角色区分完成`
+      });
+    }
+    updateRoleJob(jobId, { status: "completed", stage: "completed", progress: 100, message: "全部角色区分完成", results });
+  } catch (error) {
+    updateRoleJob(jobId, { status: "failed", stage: "failed", progress: 100, message: "角色区分失败", error: humanizeOpenAIError(error) });
+  }
+}
+
+function normalizeRoleDocuments(payload) {
+  if (!Array.isArray(payload.documents) || !payload.documents.length) throw new Error("请选择至少一份已转录访谈");
+  if (payload.documents.length > 10) throw new Error("单次最多区分 10 份访谈，请分批处理");
+  return payload.documents.map((document, index) => {
+    const text = String(document?.text || "").trim().slice(0, 120_000);
+    if (!text) throw new Error(`第 ${index + 1} 份访谈尚无转录文本`);
+    return {
+      id: String(document.id || `INT-${index + 1}`).slice(0, 80),
+      name: String(document.name || `访谈 ${index + 1}`).slice(0, 160),
+      type: ["患者", "Patient"].includes(document.type) ? "Patient" : "HCP",
+      text
+    };
+  });
+}
+
+async function handleIdentifyRolesJobStart(req, res) {
+  if (!API_KEY) return json(res, 503, { error: "尚未连接 AI 服务；请先完成临时 API Key 配置。" });
+  cleanupRoleJobs();
+  const documents = normalizeRoleDocuments(await readJson(req, 25_000_000));
+  const id = randomUUID();
+  const job = {
+    id,
+    userId: req.user?.id,
+    status: "queued",
+    stage: "queued",
+    progress: 1,
+    documentIndex: 0,
+    documentCount: documents.length,
+    batchIndex: 0,
+    batchCount: 0,
+    currentName: documents[0]?.id || "所选访谈",
+    message: "角色区分任务已创建，正在进入队列",
+    startedAt: Date.now(),
+    updatedAt: Date.now()
+  };
+  roleJobs.set(id, job);
+  runRoleIdentifyJob(id, documents);
+  return json(res, 202, publicRoleJob(job));
+}
+
+function handleIdentifyRolesJobStatus(req, res, id) {
+  cleanupRoleJobs();
+  const job = roleJobs.get(id);
+  if (!job || (job.userId && req.user?.id && job.userId !== req.user.id)) return json(res, 404, { error: "角色区分任务不存在或已过期" });
+  return json(res, 200, publicRoleJob(job));
 }
 
 async function handleAnalyze(req, res) {
@@ -1417,6 +1557,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && transcribeJobMatch) return handleLargeTranscribeJobStatus(req, res, transcribeJobMatch[1]);
     if (req.method === "POST" && url.pathname === "/api/transcribe-large") return await handleLargeTranscribe(req, res);
     if (req.method === "POST" && url.pathname === "/api/outline/parse") return await handleOutlineParse(req, res);
+    if (req.method === "POST" && url.pathname === "/api/roles/identify/jobs") return await handleIdentifyRolesJobStart(req, res);
+    const roleJobMatch = url.pathname.match(/^\/api\/roles\/identify\/jobs\/([^/]+)$/);
+    if (req.method === "GET" && roleJobMatch) return handleIdentifyRolesJobStatus(req, res, roleJobMatch[1]);
     if (req.method === "POST" && url.pathname.startsWith("/api/export/")) return await handleExport(req, res, url.pathname.split("/").pop());
     if (req.method === "GET") {
       if (url.pathname === "/login" || url.pathname === "/login.html") return await serveStatic("/login.html", res);
