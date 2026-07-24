@@ -711,7 +711,7 @@ function itemFromLocalRecord(record) {
     recordedAt: meta.recordedAt || "",
     persisted: Boolean(record.serverId),
     localPersisted: true,
-    selected: true
+    selected: false
   };
 }
 
@@ -863,7 +863,7 @@ async function loadInterviewLibrary() {
       derivedFromId: item.derivedFromId || "",
       recordedAt: item.recordedAt || "",
       persisted: true,
-      selected: true
+      selected: false
     }));
     const byId = new Map();
     const byClientId = new Map();
@@ -1258,7 +1258,7 @@ function roleMappedInterviews() {
 }
 
 function selectedRoleDocuments() {
-  return roleMappedInterviews().filter((item) => item.roleSelected !== false);
+  return roleMappedInterviews().filter((item) => item.roleSelected === true);
 }
 
 function renderRoleMapper() {
@@ -1296,7 +1296,7 @@ function renderRoleMapper() {
   }
 
   $("#rolePreview").innerHTML = completed.map((item, itemIndex) => {
-    if (item.roleSelected === undefined) item.roleSelected = true;
+    if (item.roleSelected === undefined) item.roleSelected = false;
     if (item.roleExpanded === undefined) item.roleExpanded = false;
     const result = item.roleResult;
     const exchangeCount = result.exchanges?.length || 0;
@@ -1313,7 +1313,7 @@ function renderRoleMapper() {
     return `<section class="role-document ${item.roleExpanded ? "expanded" : "collapsed"}">
       <div class="role-document-head">
         <label class="role-doc-select">
-          <input class="role-doc-check" type="checkbox" data-index="${itemIndex}" ${item.roleSelected !== false ? "checked" : ""} />
+          <input class="role-doc-check" type="checkbox" data-index="${itemIndex}" ${item.roleSelected === true ? "checked" : ""} />
           <strong>${escapeHTML(item.id)} · ${escapeHTML(item.name)}</strong>
         </label>
         <div class="role-doc-meta"><span>${exchangeCount} 组问答 · ${result.average_confidence || 0}% <button class="confidence-info-button" type="button" aria-label="查看角色区分置信度说明" title="查看角色区分置信度说明">i</button></span><button class="role-toggle" type="button" data-index="${itemIndex}">${item.roleExpanded ? "收起" : "展开预览"}</button></div>
