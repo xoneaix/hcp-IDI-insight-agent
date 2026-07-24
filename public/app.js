@@ -994,8 +994,10 @@ function renderTranscripts() {
     table.innerHTML = state.interviews.map((item, index) => {
       if (item.roleResult && /正在区分对话角色/.test(item.progressText || "")) item.progressText = "角色区分完成，可在下方预览并导出 Word。";
       const isMedia = (item.file || item.hasFile) && !/\.(txt|md|csv|json)$/i.test(item.name);
-      const actionLabel = isMedia ? (item.text ? "重新转录" : item.status === "转录失败" || item.status === "转换失败" ? "重试" : "转录") : "无需转录";
-      const transcribeClass = item.text ? "retranscribe" : item.status === "转录失败" || item.status === "转换失败" ? "retry" : "primary";
+      const isTranscribing = ["大型文件处理中", "转录中", "快速转录中"].includes(item.status);
+      const isAudioPreprocessing = item.status === "音频预处理中";
+      const actionLabel = isMedia ? (isTranscribing ? "转录中" : isAudioPreprocessing ? "预处理中" : item.text ? "重新转录" : item.status === "转录失败" || item.status === "转换失败" ? "重试" : "转录") : "无需转录";
+      const transcribeClass = isTranscribing ? "transcribing" : isAudioPreprocessing ? "preprocessing" : item.text ? "retranscribe" : item.status === "转录失败" || item.status === "转换失败" ? "retry" : "primary";
       const roleProcessingThis = state.roleProcessing && state.roleProgress?.currentName === item.id;
       const canIdentifyRole = Boolean(item.text) && !state.roleProcessing;
       const roleActionLabel = roleProcessingThis ? "处理中" : item.roleResult ? "重新区分" : "区分角色";
@@ -1004,7 +1006,7 @@ function renderTranscripts() {
       const fileSize = item.file?.size || item.fileSize || 0;
       const uploadProgress = Number.isFinite(item.uploadProgress) ? Math.min(100, Math.max(0, item.uploadProgress)) : null;
       const isUploading = item.persisting || (uploadProgress !== null && uploadProgress < 100) || /正在保存到账号资料库/.test(item.progressText || "");
-      const transcribeDisabled = !isMedia || isUploading;
+      const transcribeDisabled = !isMedia || isUploading || isTranscribing || isAudioPreprocessing;
       return `<tr>
         <td><input class="row-check" type="checkbox" data-index="${index}" ${item.selected ? "checked" : ""} aria-label="选择 ${escapeHTML(item.id)}" /></td>
         <td><strong>${escapeHTML(item.id)} · ${escapeHTML(item.name)}</strong><small class="${fileSize > 24 * 1024 * 1024 && !item.text ? "large-file-note" : "file-size-note"}">${item.roleResult ? "已区分角色 · 可导出问答 Word" : item.text ? "已建立逐字稿" : fileSize > 24 * 1024 * 1024 ? `${formatFileSize(fileSize)} · 服务端提取音轨并自动分片` : `${formatFileSize(fileSize)} · 等待语音转录`}${item.persisted ? " · 已保存到账户" : item.localPersisted ? " · 已保存本机备份" : item.persisting ? " · 保存中" : ""}</small><span class="source-badge ${item.source === "实时录音" ? "live" : ""}">${sourceLabel}</span>${item.error ? `<small class="file-error">失败原因：${escapeHTML(humanizeFileTransferError(item.error))}</small>` : ""}${item.persistError ? `<small class="file-error">保存提示：${escapeHTML(humanizeFileTransferError(item.persistError))}</small>` : ""}${item.localPersistError ? `<small class="file-error">本机备份提示：${escapeHTML(humanizeFileTransferError(item.localPersistError))}</small>` : ""}</td>
