@@ -498,11 +498,21 @@ function renameInterviewForType(item, type) {
   const currentPrefix = respondentPrefix(item.type);
   if (prefix === currentPrefix && String(item.id || "").startsWith(`${prefix}-`)) {
     item.type = normalizeRespondentType(type);
+    syncRoleResultMetadata(item);
     return;
   }
   const count = state.interviews.filter((candidate) => candidate !== item && respondentPrefix(candidate.type) === prefix).length + 1;
   item.id = `${prefix}-${String(count).padStart(3, "0")}`;
   item.type = normalizeRespondentType(type);
+  syncRoleResultMetadata(item);
+}
+
+function syncRoleResultMetadata(item) {
+  if (!item?.roleResult) return;
+  item.roleResult.document_id = item.id;
+  item.roleResult.name = item.name;
+  item.roleResult.type = normalizeRespondentType(item.type);
+  item.roleResult.respondent_label = item.roleResult.type === "Patient" ? "Patient/受访者" : "HCP/受访者";
 }
 
 function formatDuration(seconds) {
@@ -1026,7 +1036,6 @@ function renderTranscripts() {
     const index = +select.dataset.index;
     const item = state.interviews[index];
     renameInterviewForType(item, select.value);
-    item.roleResult = null;
     renderAll();
     await persistInterview(index);
   }));
