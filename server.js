@@ -258,24 +258,35 @@ async function synthesize(projectName, outline, analyses) {
   return safeJsonParse(extractResponseText(response));
 }
 
-async function identifyRoleBatch(document, turns) {
-  const transcript = turns.map((turn) => `${turn.line_no}\t${turn.speaker}\t${turn.timestamp || "-"}\t${maskSensitiveText(turn.text)}`).join("\n");
+function formatRoleTranscriptTurns(turns, activeLineSet) {
+  return turns.map((turn) => {
+    const scope = activeLineSet?.has(turn.line_no) ? "待标注" : "上下文";
+    return `${scope}\t${turn.line_no}\t${turn.speaker}\t${turn.timestamp || "-"}\t${maskSensitiveText(turn.text)}`;
+  }).join("\n");
+}
+
+async function identifyRoleBatch(document, turns, contextTurns = turns) {
+  const activeLineSet = new Set(turns.map((turn) => turn.line_no));
+  const transcript = formatRoleTranscriptTurns(contextTurns, activeLineSet);
+  const activeRange = `${turns[0]?.line_no || 1}-${turns[turns.length - 1]?.line_no || turns.length}`;
   const response = await openAIResponses({
     model: MAP_MODEL,
     reasoning: { effort: "low" },
     input: [
       {
         role: "system",
-        content: "你是严谨的定性访谈语义角色标注器。根据完整对话关系判断每行说话者身份：interviewer=访谈员/主持人，respondent=被访者，observer=明确的第三方或旁听者，uncertain=证据不足。角色依据是整段会话身份而非句式；受访者可能反问，访谈员也可能陈述。必须为输入的每个 line_no 输出且仅输出一次，不改写原话，不推断姓名、疾病或身份等新事实。"
+        content: "你是严谨的定性访谈语义角色标注器。根据完整对话关系判断每行说话者身份：interviewer=访谈员/主持人，respondent=被访者，observer=明确的第三方或旁听者，uncertain=证据不足。角色依据是整段会话身份而非句式；受访者可能反问，访谈员也可能陈述。输入中会包含“上下文”行和“待标注”行：上下文行只用于理解前后语义和说话关系，严禁输出上下文行；必须仅为每个“待标注”line_no 输出且仅输出一次。不改写原话，不推断姓名、疾病或身份等新事实。"
       },
       {
         role: "user",
-        content: `受访者类型：${document.type}\n文件：${document.name}\n\n逐行转录（行号 / 原说话人 / 时间 / 原话）：\n${transcript}`
+        content: `受访者类型：${document.type}\n文件：${document.name}\n正式待标注行号范围：${activeRange}\n\n逐行转录（范围 / 行号 / 原说话人 / 时间 / 原话）：\n${transcript}\n\n请只输出“待标注”行的 assignments，不要输出“上下文”行。`
       }
     ],
     text: { format: { type: "json_schema", name: "interview_role_assignments", strict: true, schema: roleAssignmentSchema } }
   });
-  return safeJsonParse(extractResponseText(response));
+  const parsed = safeJsonParse(extractResponseText(response));
+  parsed.assignments = (parsed.assignments || []).filter((assignment) => activeLineSet.has(Number(assignment.line_no)));
+  return parsed;
 }
 
 async function identifyDocumentRoles(document, options = {}) {
@@ -283,12 +294,18 @@ async function identifyDocumentRoles(document, options = {}) {
   const turns = parseTranscriptTurns(document.text);
   if (!turns.length) throw new Error(`${document.id} 没有可识别的转录行`);
   const batchSize = 140;
+  const contextWindow = 8;
   const batches = [];
-  for (let index = 0; index < turns.length; index += batchSize) batches.push(turns.slice(index, index + batchSize));
+  for (let index = 0; index < turns.length; index += batchSize) {
+    batches.push({
+      active: turns.slice(index, index + batchSize),
+      context: turns.slice(Math.max(0, index - contextWindow), Math.min(turns.length, index + batchSize + contextWindow))
+    });
+  }
   let completedBatches = 0;
-  onProgress({ stage: "splitting", progress: 6, batchIndex: 0, batchCount: batches.length, message: `已拆分为 ${batches.length} 批语句，准备开始角色判断` });
+  onProgress({ stage: "splitting", progress: 6, batchIndex: 0, batchCount: batches.length, message: `已拆分为 ${batches.length} 批语句，并加入前后文缓冲` });
   const batchResults = await runWithConcurrency(batches, Math.min(3, MAX_CONCURRENCY), async (batch, batchIndex) => {
-    const result = await identifyRoleBatch(document, batch);
+    const result = await identifyRoleBatch(document, batch.active, batch.context);
     completedBatches += 1;
     onProgress({
       stage: "mapping",
