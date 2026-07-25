@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" href="assets/medvoice-logo-v4.webp" as="image" type="image/webp" fetchpriority="high" />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=20260726.1" />
+    <link rel="stylesheet" href="style.css?v=20260726.2" />
   </head>
   <body>
     <div class="app-shell">
@@ -181,21 +181,14 @@
           <article class="panel outline-batch-panel">
             <div class="outline-batch-head">
               <div><div class="eyebrow">ANALYSIS COHORTS</div><h2>访谈大纲与样本批次</h2><p>先上传大纲，再为每份大纲绑定对应人群；不同批次的分析结果相互独立。</p></div>
-              <button class="secondary-button outline-upload-primary" id="addOutlineGuide" type="button">＋ 上传访谈大纲</button>
             </div>
-            <input id="outlineFile" type="file" accept=".docx,.pdf,.txt,.md" hidden />
+            <div class="outline-upload outline-dropzone" id="outlineUpload" role="button" tabindex="0" aria-label="上传或拖拽访谈大纲">
+              <input id="outlineFile" type="file" accept=".docx,.pdf,.txt,.md" hidden />
+              <span class="outline-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M5 14.5V19h14v-4.5"/></svg></span>
+              <div class="outline-drop-copy"><strong>上传或拖拽访谈大纲至此</strong><small>每次上传将创建一个独立分析批次，随后可绑定对应访谈样本</small><span><b>DOCX</b><b>PDF</b><b>TXT</b><b>MD</b></span></div>
+              <button class="secondary-button" id="browseOutline" type="button">选择大纲文件</button>
+            </div>
             <div class="outline-guide-tabs" id="outlineGuideTabs"></div>
-            <section class="outline-file-manager" aria-label="当前访谈大纲文件">
-              <div class="outline-file-manager-head">
-                <div><span>当前分析场景</span><strong id="activeOutlineGuideLabel">访谈大纲 1</strong></div>
-                <small>上传错误时，可直接替换文件或删除整个大纲批次。</small>
-              </div>
-              <label class="outline-guide-title-field"><span>场景名称</span><input id="outlineGuideTitle" maxlength="80" placeholder="例如：院外复购患者 / 院外首购患者" /></label>
-              <div class="outline-upload" id="outlineUpload" role="button" tabindex="0">
-                <span>⇧</span><div><strong>为当前批次上传 Word / PDF 大纲</strong><small>支持 DOCX · PDF · TXT · MD，上传后自动提取维度与问题</small></div><button class="secondary-button" id="browseOutline" type="button">选择文件</button>
-              </div>
-              <div class="outline-file-card" id="outlineFileCard" hidden></div>
-            </section>
             <div class="sample-assignment-head"><div><strong id="sampleAssignmentTitle">为当前大纲选择样本</strong><small id="sampleAssignmentSummary">0 个可用样本</small></div><div><button id="selectAllAnalysisSamples" type="button">全选可用样本</button><button id="clearAnalysisSamples" type="button">清空选择</button></div></div>
             <div class="analysis-sample-picker" id="analysisSamplePicker"></div>
           </article>
@@ -275,6 +268,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="app.js?v=20260726.1"></script>
+    <script type="module" src="app.js?v=20260726.2"></script>
   </body>
 </html>
