@@ -60,6 +60,7 @@ const mime = {
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".webp": "image/webp",
   ".ico": "image/x-icon"
 };
 
@@ -1517,9 +1518,14 @@ async function serveStatic(pathname, res) {
   try {
     const data = await readFile(filePath);
     const extension = extname(filePath);
+    const cacheControl = extension === ".html"
+      ? "no-cache, must-revalidate"
+      : relative.startsWith("assets/")
+        ? "public, max-age=31536000, immutable"
+        : "public, max-age=300";
     res.writeHead(200, {
       "Content-Type": mime[extension] || "application/octet-stream",
-      "Cache-Control": extension === ".html" ? "no-cache, must-revalidate" : "public, max-age=300"
+      "Cache-Control": cacheControl
     });
     res.end(data);
   } catch {

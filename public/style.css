@@ -95,6 +95,7 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .brand-stacked{display:flex;flex-direction:column;align-items:flex-start;gap:7px;padding:0 0 22px}
 .brand-copy{display:block;padding-left:3px}.brand-copy strong{display:block;font-size:20px;line-height:1;letter-spacing:.1px}.brand-copy small{display:block;margin-top:6px;font:600 9px/1 "DM Mono";letter-spacing:2.3px;color:#b9c7c2}
 .medvoice-logo{display:block;width:176px;height:auto;padding:0;background:transparent;border:0;border-radius:0;box-shadow:none;overflow:visible;flex:0 0 auto}
+.medvoice-logo picture{display:block}
 .medvoice-logo img{display:block;width:176px;max-width:100%;height:auto;object-fit:contain;object-position:left center;filter:drop-shadow(0 10px 12px rgba(6,27,22,.24))}
 .project-select-wrap{display:block;margin-top:7px;position:relative}
 .project-select-wrap::after{content:"⌄";position:absolute;right:10px;top:50%;transform:translateY(-50%);color:#bad0c8;font-size:11px;pointer-events:none}
