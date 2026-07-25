@@ -1291,16 +1291,36 @@ function selectedRoleDocuments() {
   return roleMappedInterviews().filter((item) => item.roleSelected === true);
 }
 
+function updateRolePreviewScrollState() {
+  const preview = $("#rolePreview");
+  const shell = $("#rolePreviewShell");
+  const hint = $("#roleScrollHint");
+  if (!preview || !shell || !hint) return;
+  const scrollable = preview.scrollHeight > preview.clientHeight + 4;
+  const atBottom = !scrollable || preview.scrollTop + preview.clientHeight >= preview.scrollHeight - 8;
+  shell.classList.toggle("scrollable", scrollable);
+  shell.classList.toggle("at-bottom", atBottom);
+  hint.hidden = !scrollable || atBottom;
+}
+
 function renderRoleMapper() {
+  const preview = $("#rolePreview");
+  const previousScrollTop = preview?.scrollTop || 0;
   const selected = selectedInterviews();
   const ready = selected.filter((item) => item.text);
   const completed = roleMappedInterviews();
   const selectedForWord = selectedRoleDocuments();
   const allRoleDocsSelected = completed.length > 0 && selectedForWord.length === completed.length;
+  const allRoleDocsExpanded = completed.length > 0 && completed.every((item) => item.roleExpanded === true);
 
   $("#exportRoleWord").disabled = state.roleProcessing || !selectedForWord.length;
   $("#deleteRoleDocs").disabled = state.roleProcessing || !selectedForWord.length;
   $("#selectAllRoleDocs").disabled = state.roleProcessing || !completed.length;
+  const toggleAllRolePreviews = $("#toggleAllRolePreviews");
+  if (toggleAllRolePreviews) {
+    toggleAllRolePreviews.disabled = state.roleProcessing || !completed.length;
+    toggleAllRolePreviews.textContent = allRoleDocsExpanded ? "全部折叠" : "展开全部";
+  }
   $("#selectAllRoleDocs").textContent = allRoleDocsSelected ? "取消全选" : "全选";
   $("#exportRoleWord").textContent = selectedForWord.length ? `导出 Word (${selectedForWord.length}) ↗` : "导出 Word ↗";
   const progress = state.roleProgress;
@@ -1322,6 +1342,7 @@ function renderRoleMapper() {
 
   if (!completed.length) {
     $("#rolePreview").innerHTML = '<div class="empty-compact">完成转录后，可在上方“已导入资料”的对应文件行点击“区分角色”。</div>';
+    updateRolePreviewScrollState();
     return;
   }
 
@@ -1351,6 +1372,9 @@ function renderRoleMapper() {
       ${body}
     </section>`;
   }).join("");
+  $("#rolePreview").scrollTop = previousScrollTop;
+  $("#rolePreview").onscroll = updateRolePreviewScrollState;
+  requestAnimationFrame(updateRolePreviewScrollState);
 
   $$(".role-doc-check").forEach((checkbox) => checkbox.addEventListener("change", (event) => {
     const item = roleMappedInterviews()[+event.currentTarget.dataset.index];
@@ -1961,6 +1985,12 @@ $("#selectAllRoleDocs").addEventListener("click", () => {
   completed.forEach((item) => { item.roleSelected = shouldSelectAll; });
   renderRoleMapper();
 });
+$("#toggleAllRolePreviews")?.addEventListener("click", () => {
+  const completed = roleMappedInterviews();
+  const shouldExpand = !completed.every((item) => item.roleExpanded === true);
+  completed.forEach((item) => { item.roleExpanded = shouldExpand; });
+  renderRoleMapper();
+});
 $("#deleteRoleDocs").addEventListener("click", deleteSelectedRoleDocs);
 $("#exportRoleWord").addEventListener("click", exportRoleWord);
 $("#browseOutline").addEventListener("click", (event) => { event.stopPropagation(); $("#outlineFile").click(); });
@@ -2020,6 +2050,7 @@ $("#projectSelect").addEventListener("change", (event) => setActiveProject(event
 $("#renameProject").addEventListener("click", renameCurrentProject);
 $("#createProject").addEventListener("click", createProject);
 window.addEventListener("hashchange", () => showView(savedView(), { updateHash: false }));
+window.addEventListener("resize", updateRolePreviewScrollState);
 
 async function initializeApp() {
   const initialView = savedView(INITIAL_HASH);

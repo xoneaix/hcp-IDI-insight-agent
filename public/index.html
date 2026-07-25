@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" href="assets/medvoice-logo-v4.webp" as="image" type="image/webp" fetchpriority="high" />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=20260725.2" />
+    <link rel="stylesheet" href="style.css?v=20260725.3" />
   </head>
   <body>
     <div class="app-shell">
@@ -148,7 +148,7 @@
           <article class="panel role-mapper-panel">
             <div class="role-mapper-head">
               <div><div class="eyebrow">SEMANTIC ROLE MAPPER</div><h2>区分对话角色</h2><p>基于说话人线索和上下文语义，将转录原话整理为“访谈员提问 × HCP / Patient 回答”；不改写原话，低置信内容自动标记待复核。</p></div>
-              <div class="role-actions"><button class="secondary-button" id="selectAllRoleDocs" disabled>全选</button><button class="secondary-button danger-role-button" id="deleteRoleDocs" disabled>删除所选</button><button class="secondary-button" id="exportRoleWord" disabled>导出 Word ↗</button></div>
+              <div class="role-actions"><button class="secondary-button" id="toggleAllRolePreviews" disabled>展开全部</button><button class="secondary-button" id="selectAllRoleDocs" disabled>全选</button><button class="secondary-button danger-role-button" id="deleteRoleDocs" disabled>删除所选</button><button class="secondary-button" id="exportRoleWord" disabled>导出 Word ↗</button></div>
             </div>
             <div class="role-flow">
               <div><i>01</i><span><strong>逐行结构化</strong><small>说话人 · 时间戳 · 原话</small></span></div>
@@ -157,7 +157,10 @@
               <div><i>04</i><span><strong>Word 逐字稿</strong><small>可编辑 · 保留原话</small></span></div>
             </div>
             <div class="role-summary"><span id="roleSummary">等待已转录资料</span><div class="role-progress-bar" id="roleProgressBar" hidden><i></i><b></b></div><em>AI 角色判断仅用于辅助整理，请由研究人员复核。</em></div>
-            <div class="role-preview" id="rolePreview"><div class="empty-compact">完成转录后，选择一份或多份资料并点击“区分所选访谈角色”。</div></div>
+            <div class="role-preview-shell" id="rolePreviewShell">
+              <div class="role-preview" id="rolePreview" tabindex="0" aria-label="角色区分结果，可上下滚动浏览"><div class="empty-compact">完成转录后，选择一份或多份资料并点击“区分所选访谈角色”。</div></div>
+              <span class="role-scroll-hint" id="roleScrollHint" hidden>↓ 向下滚动查看更多结果</span>
+            </div>
           </article>
         </section>
 
@@ -251,6 +254,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="app.js?v=20260725.2"></script>
+    <script type="module" src="app.js?v=20260725.3"></script>
   </body>
 </html>

@@ -231,3 +231,22 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .project-mini-actions{grid-template-columns:1fr}
 .project-mini-actions button{padding:8px 8px}
 @media(max-width:1050px){.project-edit-button{display:none}}
+
+/* Role result viewport: contain long document sets without stretching the whole page. */
+.role-preview-shell{position:relative;margin-top:14px}
+.role-preview-shell .role-preview{display:grid;gap:10px;max-height:min(620px,65vh);margin:0;padding:2px 8px 2px 2px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#a9bdb4 #edf2ef}
+.role-preview-shell.scrollable .role-preview{padding-bottom:34px}
+.role-preview-shell .role-preview:focus{outline:0;box-shadow:0 0 0 3px rgba(63,128,108,.08);border-radius:12px}
+.role-preview-shell .role-preview::-webkit-scrollbar{width:7px}
+.role-preview-shell .role-preview::-webkit-scrollbar-track{background:#edf2ef;border-radius:999px}
+.role-preview-shell .role-preview::-webkit-scrollbar-thumb{background:#a9bdb4;border-radius:999px}
+.role-preview-shell.scrollable:not(.at-bottom)::after{content:"";position:absolute;z-index:1;left:2px;right:8px;bottom:0;height:56px;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,0),rgba(255,255,255,.97))}
+.role-scroll-hint{position:absolute;z-index:2;left:50%;bottom:9px;transform:translateX(-50%);padding:6px 11px;border:1px solid #dbe6e1;border-radius:999px;background:rgba(255,255,255,.97);box-shadow:0 8px 22px rgba(30,60,50,.09);color:#58756c;font-size:8px;white-space:nowrap;pointer-events:none}
+.role-scroll-hint[hidden]{display:none}
+.role-document.expanded .role-document-head{position:sticky;top:0;z-index:1;box-shadow:0 1px 0 #e5eae7}
+.role-actions #toggleAllRolePreviews{color:#55736a;background:#f7faf8}
+@media(max-width:720px){
+  .role-actions{grid-template-columns:1fr 1fr}
+  .role-preview-shell .role-preview{max-height:58vh;padding-right:5px}
+  .role-scroll-hint{bottom:7px}
+}
