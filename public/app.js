@@ -1,5 +1,6 @@
 import { interviewIdForType, nextInterviewId, repairInterviewIds, roleDocumentForExport } from "./interview-id.js?v=20260725.2";
 import { flattenQuestionGroups, groupOutlineQuestions, groupsFromQuestions, normalizeQuestionGroups } from "./outline-structure.js?v=20260725.2";
+import { trialUserIdentity } from "./user-identity.js?v=20260726.1";
 
 const DEFAULT_PROJECT_ID = "default";
 const DEFAULT_PROJECT_NAME = "未命名访谈项目";
@@ -491,6 +492,7 @@ async function checkPortalSession() {
     const data = await response.json();
     state.authRequired = Boolean(data.authRequired);
     state.currentUser = data.user || null;
+    renderTrialUserIdentity(state.authRequired ? data.user : null);
     if (state.authRequired && !data.authenticated) return location.assign("/login");
     if (data.user?.mustChangePassword) return location.assign("/login?change=1");
     $("#adminAccess").hidden = data.user?.role !== "admin" || !state.authRequired;
@@ -509,6 +511,17 @@ async function checkPortalSession() {
   } catch (error) {
     console.warn("MedVoice session check failed", error);
   }
+}
+
+function renderTrialUserIdentity(user) {
+  const card = $("#trialUserCard");
+  const identity = trialUserIdentity(user?.email);
+  card.hidden = !identity;
+  if (!identity) return;
+  $("#trialUserInitials").textContent = identity.initials;
+  $("#trialUserName").textContent = identity.displayName;
+  $("#trialUserEmail").textContent = identity.email;
+  card.title = `当前试用用户：${identity.email}`;
 }
 
 function openApiSettings(nextAction = null) {

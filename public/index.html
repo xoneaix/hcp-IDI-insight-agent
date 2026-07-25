@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" href="assets/medvoice-logo-v4.webp" as="image" type="image/webp" fetchpriority="high" />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=20260726.4" />
+    <link rel="stylesheet" href="style.css?v=20260726.5" />
   </head>
   <body>
     <div class="app-shell">
@@ -39,6 +39,11 @@
           <p><i>✓</i> 证据可追溯</p>
           <p><i>✓</i> 隐私字段脱敏</p>
           <p><i>✓</i> 人工复核保留</p>
+        </div>
+
+        <div class="user-card trial-user-card" id="trialUserCard" aria-label="当前试用用户" hidden>
+          <span id="trialUserInitials" aria-hidden="true">MV</span>
+          <div><strong id="trialUserName">试用用户</strong><small id="trialUserEmail"></small></div>
         </div>
 
         <div class="sidebar-utilities" aria-label="辅助操作">
@@ -277,6 +282,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="app.js?v=20260726.4"></script>
+    <script type="module" src="app.js?v=20260726.5"></script>
   </body>
 </html>
