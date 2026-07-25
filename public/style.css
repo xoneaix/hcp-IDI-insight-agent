@@ -337,11 +337,12 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 #outline-view .readiness-grid article>div{min-width:0}
 #outline-view .readiness-grid small{font-weight:700;letter-spacing:.5px}
 #outline-view .readiness-grid strong{margin-top:3px}
-.readiness-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:11px}
-.readiness-icon svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
-.readiness-card.sample{border-top:2px solid #b9acf7!important}.readiness-card.sample .readiness-icon{background:#efecff;color:#7564d9}
-.readiness-card.guide{border-top:2px solid #efc47f!important}.readiness-card.guide .readiness-icon{background:#fff1dc;color:#ce8a2c}
-.readiness-card.analysis{border-top:2px solid #91d0d7!important}.readiness-card.analysis .readiness-icon{background:#e7f7f8;color:#378e9c}
+.readiness-icon{display:grid;place-items:center;align-self:center;justify-self:center;width:38px;height:38px;border-radius:11px}
+.readiness-icon svg{display:block;width:20px;height:20px;overflow:visible;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
+.readiness-card.sample,.readiness-card.guide,.readiness-card.analysis{border-top:1px solid var(--line)!important}
+.readiness-card.sample .readiness-icon{background:#f2f0fa;color:#766ca4}
+.readiness-card.guide .readiness-icon{background:#f7f1e8;color:#9b7950}
+.readiness-card.analysis .readiness-icon{background:#eaf4f2;color:#4f8b82}
 #outline-view .readiness-grid .innovation-card{grid-template-columns:40px minmax(0,1fr)}
 .readiness-icon.gap{background:rgba(220,242,91,.14);color:#dff25b}
 .outline-batch-panel{margin-bottom:22px;padding:22px 24px;border-color:#dfe7e3;border-radius:18px;box-shadow:0 12px 38px rgba(27,62,51,.04)}
@@ -354,8 +355,7 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .outline-dropzone.dragging{box-shadow:0 0 0 4px rgba(63,128,108,.1),0 14px 30px rgba(36,92,77,.1)}
 .outline-dropzone:focus{outline:0}
 .outline-dropzone:focus-visible{border-color:#3d806d!important;box-shadow:0 0 0 4px rgba(63,128,108,.12)}
-.outline-drop-icon{display:grid!important;place-items:center;width:52px!important;height:52px!important;border-radius:14px!important;background:#245c4d!important;color:#dff25b!important;box-shadow:0 9px 20px rgba(36,92,77,.18)}
-.outline-drop-icon svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.outline-drop-icon{display:grid!important;place-items:center;width:46px!important;height:46px!important;border:1px solid #d8e6df;border-radius:12px!important;background:#e8f2ed!important;color:var(--green)!important;font-size:23px;line-height:1;box-shadow:none}
 .outline-drop-copy{min-width:0}
 .outline-drop-copy strong{display:block;color:#20352e;font-size:13px!important}
 .outline-drop-copy small{display:block;margin-top:3px!important;color:#74847d!important;font-size:9px!important;line-height:1.55}
@@ -373,8 +373,8 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .outline-guide-document{position:relative;display:grid!important;place-items:center;width:40px!important;height:46px!important;border-radius:10px!important;background:#e8f1ec!important;color:#477264!important}
 .outline-guide-document svg{width:23px;height:23px;margin-top:-7px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 .outline-guide-document b{position:absolute;right:0;bottom:5px;left:0;font:700 6px "DM Mono";text-align:center}
-.outline-guide-document i{position:absolute;right:-4px;bottom:-4px;display:grid;place-items:center;width:17px;height:17px;border:2px solid #fff;border-radius:6px;background:#dff25b;color:#245c4d;font:700 6px "DM Mono";font-style:normal}
-.outline-guide-document.word{background:#e9f0ff!important;color:#3f68ae!important}
+.outline-guide-document i{position:absolute;right:-4px;bottom:-4px;display:grid;place-items:center;width:17px;height:17px;border:2px solid #fff;border-radius:6px;background:#dcebe4;color:#3d745f;font:700 6px "DM Mono";font-style:normal}
+.outline-guide-document.word{background:#e8f2ed!important;color:#477264!important}
 .outline-guide-document.pdf{background:#fff0ed!important;color:#be514c!important}
 .outline-guide-document.text{background:#e7f6f3!important;color:#2f7b70!important}
 .outline-guide-document.markdown{background:#f0ebff!important;color:#6d58ad!important}
