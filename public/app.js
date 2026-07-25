@@ -1,4 +1,4 @@
-import { interviewIdForType, nextInterviewId, repairInterviewIds } from "./interview-id.js?v=20260725.1";
+import { interviewIdForType, nextInterviewId, repairInterviewIds, roleDocumentForExport } from "./interview-id.js?v=20260725.2";
 
 const DEFAULT_PROJECT_ID = "default";
 const DEFAULT_PROJECT_NAME = "未命名访谈项目";
@@ -1564,10 +1564,19 @@ async function deleteSelectedRoleDocs() {
 }
 
 async function exportRoleWord() {
-  const documents = selectedRoleDocuments().map((item) => item.roleResult).filter(Boolean);
+  const selectedItems = selectedRoleDocuments();
+  const changedItems = selectedItems.filter((item) => syncRoleResultMetadata(item));
+  const documents = selectedItems.map(roleDocumentForExport).filter(Boolean);
   if (!documents.length) return toast("请先勾选至少一份已完成角色区分的访谈");
   toast("正在生成一问一答 Word…");
   try {
+    if (changedItems.length) {
+      await Promise.allSettled(changedItems.map((item) => persistInterviewIdentityRepair({
+        item,
+        previousId: item.id,
+        nextId: item.id
+      })));
+    }
     const response = await fetch(`${API_BASE}/api/export/role-docx`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

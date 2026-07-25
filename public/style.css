@@ -250,7 +250,7 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .role-preview-shell .role-preview::-webkit-scrollbar-track{background:#edf2ef;border-radius:999px}
 .role-preview-shell .role-preview::-webkit-scrollbar-thumb{background:#a9bdb4;border-radius:999px}
 .role-preview-shell.scrollable:not(.at-bottom)::after{content:"";position:absolute;z-index:1;left:2px;right:8px;bottom:0;height:56px;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,0),rgba(255,255,255,.97))}
-.role-scroll-hint{position:absolute;z-index:2;left:50%;bottom:9px;transform:translateX(-50%);padding:6px 11px;border:1px solid #dbe6e1;border-radius:999px;background:rgba(255,255,255,.97);box-shadow:0 8px 22px rgba(30,60,50,.09);color:#58756c;font-size:8px;white-space:nowrap;pointer-events:none}
+.role-scroll-hint{position:absolute;z-index:2;left:50%;bottom:9px;transform:translateX(-50%);padding:7px 12px;border:1px solid #d8e5df;border-radius:999px;background:rgba(255,255,255,.98);box-shadow:0 9px 24px rgba(30,60,50,.11);color:#4f7166;font-size:9px;font-weight:600;white-space:nowrap;pointer-events:none}
 .role-scroll-hint[hidden]{display:none}
 .role-document.expanded .role-document-head{position:sticky;top:0;z-index:1;box-shadow:0 1px 0 #e5eae7}
 .role-actions #toggleAllRolePreviews{color:#55736a;background:#f7faf8}
@@ -258,4 +258,71 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
   .role-actions{grid-template-columns:1fr 1fr}
   .role-preview-shell .role-preview{max-height:58vh;padding-right:5px}
   .role-scroll-hint{bottom:7px}
+}
+
+/* Large desktop scale: keep the generous layout while restoring comfortable reading sizes. */
+@media(min-width:1600px){
+  .app-shell{grid-template-columns:252px minmax(0,1fr)}
+  .sidebar{padding-left:20px;padding-right:20px}
+  .project-switcher small{font-size:11px}
+  .project-select-wrap select{font-size:14px}
+  .project-mini-actions button{font-size:11px}
+  .nav-item{font-size:14px;padding-top:11px;padding-bottom:11px}
+  .agent-status strong{font-size:12px}
+  .agent-status em,.agent-status p{font-size:10px}
+  .sidebar-utilities .utility-button b{font-size:11px}
+  .breadcrumb{font-size:13px}
+  .privacy-badge{font-size:11px}
+  .top-actions .utility-button,.top-actions .utility-button b{font-size:11px}
+  .view{padding-top:48px;padding-bottom:72px}
+  .eyebrow{font-size:10px}
+  .panel-head h2{font-size:19px}
+  .panel-head p{font-size:12px}
+  .primary-button,.secondary-button,.demo-button{font-size:13px}
+
+  #transcripts-view{max-width:1540px}
+  #transcripts-view .transcript-title{margin-bottom:34px}
+  #transcripts-view .transcript-title p{font-size:14px}
+  .capture-steps span{font-size:10px}
+  .capture-panel,.transcript-library{padding:28px}
+  .capture-panel{margin-bottom:28px}
+  .capture-panel-head h2,.library-head h2{font-size:20px}
+  .capture-panel-head p{font-size:12px}
+  .capture-assurances span{font-size:10px;padding:7px 10px}
+  #transcripts-view .upload-zone{padding:25px 28px}
+  #transcripts-view .upload-copy h3{font-size:15px}
+  #transcripts-view .upload-copy p{font-size:9px}
+  #transcripts-view .upload-copy small{font-size:10px}
+  .library-stats small{font-size:10px}
+  .library-toolbar{padding:12px 15px}
+  .library-toolbar p{font-size:11px}
+  .transcript-table th{height:50px;font-size:12px}
+  .transcript-table td{padding-top:17px;padding-bottom:17px}
+  .file-kind{width:36px;height:36px;font-size:8px}
+  .file-record{grid-template-columns:36px minmax(0,1fr);gap:12px}
+  .transcript-table .file-cell strong{font-size:12px}
+  .transcript-table .file-cell small{font-size:10px}
+  .transcript-table .source-badge{font-size:9px!important}
+  .transcript-table .type-select{font-size:11px;min-width:92px}
+  .transcript-table td:nth-child(4){font-size:10px}
+  .transcript-table .status-pill,.transcript-table .transcript-progress{font-size:10px}
+  .transcript-table .transcribe-button,.transcript-table .role-row-button{font-size:10px;min-width:82px;height:34px}
+  .library-scroll-hint,.role-scroll-hint{font-size:10px}
+
+  #transcripts-view .role-mapper-panel{padding:32px;margin-top:32px}
+  .role-mapper-head h2{font-size:20px}
+  .role-mapper-head p{font-size:12px}
+  .role-actions .secondary-button,.role-actions .primary-button{min-height:36px;font-size:11px}
+  .role-flow strong{font-size:12px}
+  .role-flow small{font-size:10px}
+  .role-summary{padding:12px 14px;font-size:11px}
+  .role-preview-shell .role-preview{gap:12px}
+  .role-document-head{padding:14px 16px}
+  .role-document-head strong{font-size:12px}
+  .role-document-head span{font-size:10px}
+  .role-toggle{padding:7px 10px;font-size:10px}
+  .role-more{padding:11px 16px;font-size:10px}
+  .qa-preview{padding:14px 16px}
+  .qa-preview label{font-size:9px}
+  .qa-preview p{font-size:11px}
 }

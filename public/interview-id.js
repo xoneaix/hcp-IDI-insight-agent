@@ -52,6 +52,18 @@ export function interviewIdForType(items, item, type) {
   return nextInterviewId(items, type, item);
 }
 
+export function roleDocumentForExport(item) {
+  if (!item?.roleResult) return null;
+  const type = normalizedType(item.type);
+  return {
+    ...item.roleResult,
+    document_id: String(item.id || ""),
+    name: String(item.name || item.roleResult.name || ""),
+    type,
+    respondent_label: type === "Patient" ? "Patient/受访者" : "HCP/受访者"
+  };
+}
+
 export function repairInterviewIds(items) {
   const repairs = [];
   const projectGroups = new Map();
