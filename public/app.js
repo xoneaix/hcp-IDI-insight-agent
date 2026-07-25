@@ -19,6 +19,7 @@ const state = {
   currentUser: null,
   pendingAfterConnect: null,
   libraryLoaded: false,
+  libraryError: "",
   roleProcessing: false,
   roleProgress: null,
   recording: null,
@@ -844,6 +845,9 @@ async function persistAllInterviews() {
 }
 
 async function loadInterviewLibrary() {
+  state.libraryLoaded = false;
+  state.libraryError = "";
+  renderTranscripts();
   try {
     const localRecords = await loadLocalInterviews();
     const localItems = localRecords.map(itemFromLocalRecord).map(normalizeLoadedInterviewState);
@@ -901,6 +905,9 @@ async function loadInterviewLibrary() {
     renderAll();
     if (state.interviews.length) toast(`已恢复 ${state.interviews.length} 份账号资料`);
   } catch (error) {
+    state.libraryLoaded = true;
+    state.libraryError = error.message || "资料库加载失败";
+    renderAll();
     toast(`账号资料加载失败：${error.message}`, 6000);
   }
 }
@@ -998,7 +1005,11 @@ async function addFiles(files, options = {}) {
 
 function renderTranscripts() {
   const table = $("#transcriptTable");
-  if (!state.interviews.length) {
+  if (!state.libraryLoaded) {
+    table.innerHTML = '<tr><td colspan="6" class="empty-row library-sync"><span class="library-sync-spinner"></span><strong>正在同步账号资料</strong><small>已导入的访谈和转录结果将在同步完成后自动恢复。</small></td></tr>';
+  } else if (state.libraryError) {
+    table.innerHTML = `<tr><td colspan="6" class="empty-row library-sync library-sync-error"><strong>账号资料暂时未能加载</strong><small>${escapeHTML(state.libraryError)}</small><button class="secondary-button" id="retryLibraryLoad" type="button">重新同步</button></td></tr>`;
+  } else if (!state.interviews.length) {
     table.innerHTML = '<tr><td colspan="6" class="empty-row">尚未导入资料。可上传文件或使用“实时录音”。</td></tr>';
   } else {
     table.innerHTML = state.interviews.map((item, index) => {
@@ -1029,10 +1040,13 @@ function renderTranscripts() {
     }).join("");
   }
   const transcribed = state.interviews.filter((item) => item.text).length;
-  $("#fileSummary").textContent = `${state.interviews.length} 份访谈 · ${transcribed} 份可分析`;
-  $("#libraryTotal").textContent = state.interviews.length;
-  $("#libraryTranscribed").textContent = transcribed;
-  $("#libraryPending").textContent = Math.max(0, state.interviews.length - transcribed);
+  $("#fileSummary").textContent = !state.libraryLoaded ? "正在同步账号资料…" : state.libraryError ? "资料同步失败 · 请重试" : `${state.interviews.length} 份访谈 · ${transcribed} 份可分析`;
+  const libraryTotal = $("#libraryTotal");
+  const libraryTranscribed = $("#libraryTranscribed");
+  const libraryPending = $("#libraryPending");
+  if (libraryTotal) libraryTotal.textContent = state.libraryLoaded && !state.libraryError ? state.interviews.length : "—";
+  if (libraryTranscribed) libraryTranscribed.textContent = state.libraryLoaded && !state.libraryError ? transcribed : "—";
+  if (libraryPending) libraryPending.textContent = state.libraryLoaded && !state.libraryError ? Math.max(0, state.interviews.length - transcribed) : "—";
   $("#navCount").textContent = state.interviews.length;
   $("#masterCheck").checked = state.interviews.length > 0 && state.interviews.every((item) => item.selected);
   $$(".row-check").forEach((checkbox) => checkbox.addEventListener("change", () => { state.interviews[+checkbox.dataset.index].selected = checkbox.checked; renderReadiness(); renderRoleMapper(); }));
@@ -1045,6 +1059,7 @@ function renderTranscripts() {
   }));
   $$(".transcribe-button").forEach((button) => button.addEventListener("click", () => transcribeInterview(+button.dataset.index)));
   $$(".role-row-button").forEach((button) => button.addEventListener("click", () => identifyRoleForInterview(+button.dataset.index)));
+  $("#retryLibraryLoad")?.addEventListener("click", loadInterviewLibrary);
 }
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -1902,6 +1917,7 @@ $("#goCollect").addEventListener("click", () => showView("transcripts"));
 $("#goAnalyze").addEventListener("click", () => showView("outline"));
 $("#newAnalysis").addEventListener("click", createProject);
 $("#uploadButton").addEventListener("click", () => $("#fileInput").click());
+$("#browseButton")?.addEventListener("click", (event) => { event.stopPropagation(); $("#fileInput").click(); });
 $("#uploadZone").addEventListener("click", (event) => { if (!event.target.closest("button")) $("#fileInput").click(); });
 $("#uploadZone").addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") $("#fileInput").click(); });
 $("#fileInput").addEventListener("change", (event) => addFiles([...event.target.files]));

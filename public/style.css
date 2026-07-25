@@ -54,7 +54,7 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 @media(max-width:720px){.sidebar-utilities{display:none}}
 
 /* Transcript workspace refresh: progressive hierarchy, calmer density and clearer actions. */
-#transcripts-view{--transcript-soft:#f7f9f7;--transcript-line:#e3eae6}
+#transcripts-view{--transcript-soft:#f7f9f7;--transcript-line:#e3eae6;max-width:1480px;margin:0 auto}
 #transcripts-view .transcript-title{align-items:center;margin-bottom:30px}
 #transcripts-view .transcript-title h1{margin-bottom:12px}
 #transcripts-view .transcript-title p{font-size:12px;line-height:1.7;color:#78847f}
@@ -123,6 +123,14 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .transcript-table .transcript-progress{max-width:205px;margin-top:6px;color:#8a6b34;line-height:1.55}
 .transcript-table .row-actions{gap:6px;flex-wrap:nowrap}
 .transcript-table .transcribe-button,.transcript-table .role-row-button{min-width:76px;height:31px;border-radius:8px}
+.transcript-table .library-sync{height:150px;padding:30px;text-align:center;white-space:normal}
+.library-sync>strong,.library-sync>small{display:block}
+.library-sync>strong{margin-top:10px;color:#40514b;font-size:11px}
+.library-sync>small{max-width:440px;margin:5px auto 0;color:#89958f;font-size:8px;line-height:1.65}
+.library-sync-spinner{display:block;width:24px;height:24px;margin:0 auto;border:2px solid #dce7e1;border-top-color:var(--green2);border-radius:50%;animation:librarySpin .85s linear infinite}
+.library-sync-error>strong{margin-top:0;color:#8e4448}
+.library-sync-error .secondary-button{margin-top:13px;padding:7px 12px;font-size:9px}
+@keyframes librarySpin{to{transform:rotate(360deg)}}
 #transcripts-view .role-mapper-panel{margin-top:28px;padding:28px;border-radius:18px;border-color:#e0e7e3;box-shadow:0 12px 38px rgba(27,62,51,.035)}
 #transcripts-view .role-flow{gap:12px;margin-top:24px}
 #transcripts-view .role-flow>div{padding:14px;background:#fbfcfb}

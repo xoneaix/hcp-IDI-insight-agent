@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" href="assets/medvoice-logo-v4.webp" as="image" type="image/webp" fetchpriority="high" />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="style.css?v=20260725.2" />
   </head>
   <body>
     <div class="app-shell">
@@ -119,7 +119,7 @@
               <input id="fileInput" type="file" multiple accept="audio/*,video/*,.txt,.md,.json,.csv" hidden />
               <div class="upload-icon">⇧</div>
               <div class="upload-copy"><h3>拖放资料到这里</h3><p>MP3 · WAV · MP4 · M4A · TXT · MD · CSV</p><small>支持多选；视频将自动提取音轨后进入转录。</small></div>
-              <div class="upload-actions"><button class="primary-button" id="uploadButton">＋ 选择文件</button><button class="record-button" id="recordButton"><span>●</span> 实时录音</button></div>
+              <div class="upload-actions"><button class="primary-button" id="uploadButton">＋ 选择文件</button><button id="browseButton" type="button" hidden aria-hidden="true" tabindex="-1"></button><button class="record-button" id="recordButton"><span>●</span> 实时录音</button></div>
             </div>
             <div class="recording-console" id="recordingConsole" hidden>
               <div class="recording-state"><span class="recording-pulse"></span><div><strong id="recordingStatus">准备录音</strong><small>录音文件将保留在当前浏览器会话中</small></div></div>
@@ -251,6 +251,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="app.js"></script>
+    <script type="module" src="app.js?v=20260725.2"></script>
   </body>
 </html>

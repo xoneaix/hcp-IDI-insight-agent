@@ -1518,7 +1518,7 @@ async function serveStatic(pathname, res) {
   try {
     const data = await readFile(filePath);
     const extension = extname(filePath);
-    const cacheControl = extension === ".html"
+    const cacheControl = [".html", ".css", ".js"].includes(extension)
       ? "no-cache, must-revalidate"
       : relative.startsWith("assets/")
         ? "public, max-age=31536000, immutable"
