@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" href="assets/medvoice-logo-v4.webp" as="image" type="image/webp" fetchpriority="high" />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=20260725.8" />
+    <link rel="stylesheet" href="style.css?v=20260725.9" />
   </head>
   <body>
     <div class="app-shell">
@@ -185,12 +185,14 @@
                 <input id="outlineFile" type="file" accept=".docx,.pdf,.txt,.md" hidden />
                 <span>⇧</span><div><strong>上传 Word / PDF 大纲</strong><small>DOCX · PDF · TXT · MD，扫描版 PDF 请先 OCR</small></div><button class="secondary-button" id="browseOutline">选择文件</button>
               </div>
+              <div class="outline-file-card" id="outlineFileCard" hidden></div>
               <textarea id="outlineInput" rows="13" placeholder="在此粘贴访谈大纲。例如：&#10;1. 请描述当前诊疗决策流程？&#10;2. 选择治疗方案时最重要的驱动因素是什么？&#10;3. 哪些未满足需求尚未解决？"></textarea>
               <div class="outline-meta"><span id="outlineSource">尚未载入大纲</span><button id="parseOutline">识别主要问题</button></div>
             </article>
             <article class="panel question-panel">
-              <div class="panel-head"><div><div class="eyebrow">QUESTION FRAME</div><h2>已识别主要问题</h2></div><span class="question-count" id="questionCount">0</span></div>
+              <div class="panel-head"><div><div class="eyebrow">QUESTION FRAME</div><h2>已识别主要问题</h2><p>按访谈维度整理，可直接校正分类和问题文字。</p></div><div class="question-panel-counts"><span><b id="dimensionCount">0</b> 维度</span><span><b id="questionCount">0</b> 问题</span></div></div>
               <div id="questionList" class="question-list"><div class="empty-compact">上传或输入大纲后，将在这里显示逐题分析框架。</div></div>
+              <button class="add-question-group" id="addQuestionGroup" type="button">＋ 新增问题维度</button>
             </article>
           </div>
         </section>
@@ -257,6 +259,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="app.js?v=20260725.6"></script>
+    <script type="module" src="app.js?v=20260725.7"></script>
   </body>
 </html>

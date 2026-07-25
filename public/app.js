@@ -1,4 +1,5 @@
 import { interviewIdForType, nextInterviewId, repairInterviewIds, roleDocumentForExport } from "./interview-id.js?v=20260725.2";
+import { flattenQuestionGroups, groupOutlineQuestions, groupsFromQuestions, normalizeQuestionGroups } from "./outline-structure.js?v=20260725.1";
 
 const DEFAULT_PROJECT_ID = "default";
 const DEFAULT_PROJECT_NAME = "未命名访谈项目";
@@ -11,7 +12,9 @@ const state = {
   interviews: [],
   outlineText: "",
   outlineSource: "",
+  outlineFileMeta: null,
   questions: [],
+  questionGroups: [],
   analyses: [],
   matrix: [],
   report: null,
@@ -81,7 +84,9 @@ function saveCurrentProjectWorkspace() {
   localStorage.setItem(projectDataKey(), JSON.stringify({
     outlineText: state.outlineText,
     outlineSource: state.outlineSource,
+    outlineFileMeta: state.outlineFileMeta,
     questions: state.questions,
+    questionGroups: state.questionGroups,
     analyses: state.analyses,
     matrix: state.matrix,
     report: state.report
@@ -93,7 +98,11 @@ function loadCurrentProjectWorkspace() {
   try { data = JSON.parse(localStorage.getItem(projectDataKey()) || "{}"); } catch {}
   state.outlineText = data.outlineText || "";
   state.outlineSource = data.outlineSource || "";
-  state.questions = Array.isArray(data.questions) ? data.questions : [];
+  state.outlineFileMeta = data.outlineFileMeta && typeof data.outlineFileMeta === "object" ? data.outlineFileMeta : null;
+  state.questionGroups = Array.isArray(data.questionGroups) && data.questionGroups.length
+    ? normalizeQuestionGroups(data.questionGroups)
+    : groupsFromQuestions(Array.isArray(data.questions) ? data.questions : []);
+  state.questions = flattenQuestionGroups(state.questionGroups);
   state.analyses = Array.isArray(data.analyses) ? data.analyses : [];
   state.matrix = Array.isArray(data.matrix) ? data.matrix : [];
   state.report = data.report || null;
@@ -1607,14 +1616,39 @@ function extractQuestions(text) {
   return [...new Set(explicit.length >= 2 ? explicit : lines)].slice(0, 50);
 }
 
+function invalidateOutlineAnalysis() {
+  state.analyses = [];
+  state.matrix = [];
+  state.report = null;
+}
+
+function syncQuestionFramework({ rerender = false } = {}) {
+  state.questions = flattenQuestionGroups(state.questionGroups);
+  invalidateOutlineAnalysis();
+  saveCurrentProjectWorkspace();
+  if (rerender) {
+    renderQuestions();
+  } else {
+    $("#dimensionCount").textContent = state.questionGroups.filter((group) => group.questions?.some((question) => String(question).trim())).length;
+    $("#questionCount").textContent = state.questions.length;
+  }
+  renderReadiness();
+  renderOverview();
+  renderMatrix();
+  renderReport();
+}
+
 function parseOutlineFromText() {
   state.outlineText = $("#outlineInput").value.trim();
-  state.questions = extractQuestions(state.outlineText);
+  state.questionGroups = groupOutlineQuestions(state.outlineText, extractQuestions(state.outlineText));
+  state.questions = flattenQuestionGroups(state.questionGroups);
   state.outlineSource = state.outlineSource || "手动输入";
+  if (state.outlineFileMeta) state.outlineFileMeta.edited = true;
+  invalidateOutlineAnalysis();
   renderQuestions();
   saveCurrentProjectWorkspace();
   renderAll();
-  toast(state.questions.length ? `已识别 ${state.questions.length} 个主要问题` : "尚未识别到问题，请检查大纲格式");
+  toast(state.questions.length ? `已整理 ${state.questionGroups.length} 个维度、${state.questions.length} 个主要问题` : "尚未识别到问题，请检查大纲格式");
 }
 
 async function uploadOutline(file) {
@@ -1626,22 +1660,103 @@ async function uploadOutline(file) {
     if (!response.ok) throw new Error(data.error || "大纲解析失败");
     state.outlineText = data.text;
     state.outlineSource = data.filename;
-    state.questions = data.questions || extractQuestions(data.text);
+    state.outlineFileMeta = {
+      name: data.filename || file.name,
+      size: file.size,
+      type: file.type || file.name.split(".").pop()?.toUpperCase() || "DOCUMENT",
+      lastModified: file.lastModified || Date.now(),
+      edited: false
+    };
+    state.questionGroups = groupOutlineQuestions(data.text, data.questions || extractQuestions(data.text));
+    state.questions = flattenQuestionGroups(state.questionGroups);
+    invalidateOutlineAnalysis();
     $("#outlineInput").value = state.outlineText;
     saveCurrentProjectWorkspace();
     renderAll();
-    toast(`已从 ${data.filename} 识别 ${state.questions.length} 个问题`);
+    toast(`已载入 ${data.filename}，整理出 ${state.questionGroups.length} 个维度、${state.questions.length} 个问题`);
   } catch (error) {
     toast(error.message.includes("fetch") ? "请先启动 MedVoice 本地服务，再解析 Word / PDF" : error.message);
   }
 }
 
+function resizeQuestionEditor(editor) {
+  editor.style.height = "auto";
+  editor.style.height = `${Math.min(150, Math.max(42, editor.scrollHeight))}px`;
+}
+
 function renderQuestions() {
+  const activeGroups = state.questionGroups.filter((group) => group.questions?.some((question) => String(question).trim()));
+  $("#dimensionCount").textContent = activeGroups.length;
   $("#questionCount").textContent = state.questions.length;
-  $("#questionList").innerHTML = state.questions.length
-    ? state.questions.map((question, index) => `<div class="question-item"><span>Q${index + 1}</span><p>${escapeHTML(question)}</p></div>`).join("")
+  let questionNumber = 0;
+  $("#questionList").innerHTML = state.questionGroups.length
+    ? state.questionGroups.map((group, groupIndex) => `<section class="question-group">
+      <div class="question-group-head">
+        <span class="question-group-index">${String(groupIndex + 1).padStart(2, "0")}</span>
+        <label><small>访谈维度</small><input class="question-group-title" data-group="${groupIndex}" value="${escapeHTML(group.title || "未命名维度")}" aria-label="编辑第 ${groupIndex + 1} 个问题维度名称" /></label>
+        <em>${group.questions.length} 题</em>
+        <button class="question-group-delete" data-group="${groupIndex}" type="button" aria-label="删除该问题维度" title="删除该维度">×</button>
+      </div>
+      <div class="question-group-body">${group.questions.map((question, questionIndex) => {
+        questionNumber += 1;
+        return `<div class="question-editor-row">
+          <span>Q${String(questionNumber).padStart(2, "0")}</span>
+          <textarea class="question-editor" rows="1" data-group="${groupIndex}" data-question="${questionIndex}" aria-label="编辑问题 Q${questionNumber}" placeholder="请输入访谈问题">${escapeHTML(question)}</textarea>
+          <button class="question-delete" data-group="${groupIndex}" data-question="${questionIndex}" type="button" aria-label="删除问题 Q${questionNumber}" title="删除问题">×</button>
+        </div>`;
+      }).join("")}</div>
+      <button class="question-add" data-group="${groupIndex}" type="button">＋ 在此维度添加问题</button>
+    </section>`).join("")
     : '<div class="empty-compact">上传或输入大纲后，将在这里显示逐题分析框架。</div>';
-  $("#outlineSource").textContent = state.outlineSource ? `来源：${state.outlineSource}` : "尚未载入大纲";
+  $("#outlineSource").textContent = state.outlineSource
+    ? state.outlineFileMeta?.edited
+      ? `来源：${state.outlineSource} · 原文或问题框架已人工校正`
+      : `来源：${state.outlineSource}`
+    : "尚未载入大纲";
+  const fileCard = $("#outlineFileCard");
+  if (state.outlineFileMeta) {
+    const extension = String(state.outlineFileMeta.name || "").split(".").pop()?.toUpperCase() || "DOC";
+    fileCard.hidden = false;
+    fileCard.innerHTML = `<span class="outline-file-icon">${escapeHTML(extension.slice(0, 4))}</span><div><strong>${escapeHTML(state.outlineFileMeta.name)}</strong><small>${formatFileSize(state.outlineFileMeta.size || 0)} · 已完成内容提取${state.outlineFileMeta.edited ? " · 已人工校正" : ""}</small></div><span class="outline-file-status">✓ ${activeGroups.length} 个维度 · ${state.questions.length} 题</span><button id="replaceOutlineFile" type="button">替换文件</button>`;
+    $("#replaceOutlineFile").addEventListener("click", () => $("#outlineFile").click());
+  } else {
+    fileCard.hidden = true;
+    fileCard.innerHTML = "";
+  }
+
+  $$(".question-editor").forEach((editor) => {
+    resizeQuestionEditor(editor);
+    editor.addEventListener("input", () => {
+      const group = state.questionGroups[+editor.dataset.group];
+      if (!group) return;
+      group.questions[+editor.dataset.question] = editor.value;
+      resizeQuestionEditor(editor);
+      syncQuestionFramework();
+    });
+  });
+  $$(".question-group-title").forEach((input) => input.addEventListener("input", () => {
+    const group = state.questionGroups[+input.dataset.group];
+    if (!group) return;
+    group.title = input.value;
+    syncQuestionFramework();
+  }));
+  $$(".question-delete").forEach((button) => button.addEventListener("click", () => {
+    const group = state.questionGroups[+button.dataset.group];
+    if (!group) return;
+    group.questions.splice(+button.dataset.question, 1);
+    if (!group.questions.length) state.questionGroups.splice(+button.dataset.group, 1);
+    syncQuestionFramework({ rerender: true });
+  }));
+  $$(".question-group-delete").forEach((button) => button.addEventListener("click", () => {
+    state.questionGroups.splice(+button.dataset.group, 1);
+    syncQuestionFramework({ rerender: true });
+  }));
+  $$(".question-add").forEach((button) => button.addEventListener("click", () => {
+    const group = state.questionGroups[+button.dataset.group];
+    if (!group) return;
+    group.questions.push("");
+    syncQuestionFramework({ rerender: true });
+  }));
 }
 
 function selectedInterviews() {
@@ -1651,8 +1766,9 @@ function selectedInterviews() {
 function renderReadiness() {
   const selected = selectedInterviews();
   const ready = selected.filter((item) => item.text).length;
+  const dimensionCount = state.questionGroups.filter((group) => group.questions?.some((question) => String(question).trim())).length;
   $("#readyFiles").textContent = `${ready} / ${selected.length}`;
-  $("#readyQuestions").textContent = `${state.questions.length} 题`;
+  $("#readyQuestions").textContent = `${dimensionCount} 维度 / ${state.questions.length} 题`;
   const isReady = ready > 0 && ready === selected.length && state.questions.length > 0;
   $("#readyStatus").textContent = isReady ? "可以分析" : "未就绪";
   $("#runOutlineAnalysis").disabled = !isReady;
@@ -2057,10 +2173,36 @@ $("#exportRoleWord").addEventListener("click", exportRoleWord);
 $("#browseOutline").addEventListener("click", (event) => { event.stopPropagation(); $("#outlineFile").click(); });
 $("#outlineUpload").addEventListener("click", (event) => { if (!event.target.closest("button")) $("#outlineFile").click(); });
 $("#outlineUpload").addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") $("#outlineFile").click(); });
-$("#outlineFile").addEventListener("change", (event) => { if (event.target.files[0]) uploadOutline(event.target.files[0]); });
+$("#outlineFile").addEventListener("change", (event) => {
+  if (event.target.files[0]) uploadOutline(event.target.files[0]);
+  event.target.value = "";
+});
 $("#parseOutline").addEventListener("click", parseOutlineFromText);
-$("#outlineInput").addEventListener("input", () => { state.outlineText = $("#outlineInput").value; state.outlineSource = "手动输入"; saveCurrentProjectWorkspace(); });
-$("#clearOutline").addEventListener("click", () => { state.outlineText = ""; state.outlineSource = ""; state.questions = []; $("#outlineInput").value = ""; saveCurrentProjectWorkspace(); renderAll(); });
+$("#outlineInput").addEventListener("input", () => {
+  state.outlineText = $("#outlineInput").value;
+  if (state.outlineFileMeta) {
+    state.outlineFileMeta.edited = true;
+  } else {
+    state.outlineSource = "手动输入";
+  }
+  invalidateOutlineAnalysis();
+  saveCurrentProjectWorkspace();
+});
+$("#addQuestionGroup").addEventListener("click", () => {
+  state.questionGroups.push({ title: "新问题维度", questions: [""] });
+  syncQuestionFramework({ rerender: true });
+});
+$("#clearOutline").addEventListener("click", () => {
+  state.outlineText = "";
+  state.outlineSource = "";
+  state.outlineFileMeta = null;
+  state.questions = [];
+  state.questionGroups = [];
+  invalidateOutlineAnalysis();
+  $("#outlineInput").value = "";
+  saveCurrentProjectWorkspace();
+  renderAll();
+});
 $("#runOutlineAnalysis").addEventListener("click", runAnalysis);
 $("#exportExcel").addEventListener("click", () => downloadExport("xlsx"));
 $("#exportWord").addEventListener("click", () => downloadExport("docx"));
