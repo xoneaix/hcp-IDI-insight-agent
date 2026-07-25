@@ -1,3 +1,5 @@
+import { interviewIdForType, nextInterviewId, repairInterviewIds } from "./interview-id.js?v=20260725.1";
+
 const DEFAULT_PROJECT_ID = "default";
 const DEFAULT_PROJECT_NAME = "未命名访谈项目";
 
@@ -484,36 +486,40 @@ function inferRespondentType(type, id = "", name = "") {
   return normalized;
 }
 
-function respondentPrefix(type) {
-  return normalizeRespondentType(type) === "Patient" ? "Patient" : "HCP";
-}
-
 function nextId(type = "HCP") {
-  const prefix = respondentPrefix(type);
-  const count = state.interviews.filter((item) => respondentPrefix(item.type) === prefix).length + 1;
-  return `${prefix}-${String(count).padStart(3, "0")}`;
+  return nextInterviewId(state.interviews, type);
 }
 
 function renameInterviewForType(item, type) {
-  const prefix = respondentPrefix(type);
-  const currentPrefix = respondentPrefix(item.type);
-  if (prefix === currentPrefix && String(item.id || "").startsWith(`${prefix}-`)) {
-    item.type = normalizeRespondentType(type);
-    syncRoleResultMetadata(item);
-    return;
-  }
-  const count = state.interviews.filter((candidate) => candidate !== item && respondentPrefix(candidate.type) === prefix).length + 1;
-  item.id = `${prefix}-${String(count).padStart(3, "0")}`;
-  item.type = normalizeRespondentType(type);
+  const normalizedType = normalizeRespondentType(type);
+  item.id = interviewIdForType(state.interviews, item, normalizedType);
+  item.type = normalizedType;
   syncRoleResultMetadata(item);
 }
 
 function syncRoleResultMetadata(item) {
-  if (!item?.roleResult) return;
+  if (!item?.roleResult) return false;
+  const nextType = normalizeRespondentType(item.type);
+  const nextLabel = nextType === "Patient" ? "Patient/受访者" : "HCP/受访者";
+  const changed = item.roleResult.document_id !== item.id
+    || item.roleResult.name !== item.name
+    || item.roleResult.type !== nextType
+    || item.roleResult.respondent_label !== nextLabel;
   item.roleResult.document_id = item.id;
   item.roleResult.name = item.name;
-  item.roleResult.type = normalizeRespondentType(item.type);
-  item.roleResult.respondent_label = item.roleResult.type === "Patient" ? "Patient/受访者" : "HCP/受访者";
+  item.roleResult.type = nextType;
+  item.roleResult.respondent_label = nextLabel;
+  return changed;
+}
+
+function reconcileInterviewIds(items) {
+  const repairs = repairInterviewIds(items);
+  const repairedItems = new Map(repairs.map((repair) => [repair.item, repair]));
+  for (const item of items) {
+    if (!syncRoleResultMetadata(item) || repairedItems.has(item)) continue;
+    repairedItems.set(item, { item, previousId: item.id, nextId: item.id });
+  }
+  return [...repairedItems.values()];
 }
 
 function formatDuration(seconds) {
@@ -636,8 +642,7 @@ function localInterviewRecord(item) {
   };
 }
 
-async function saveLocalInterview(index) {
-  const item = state.interviews[index];
+async function saveLocalInterviewItem(item) {
   if (!item) return;
   try {
     await withLocalStore("readwrite", (store) => store.put(localInterviewRecord(item)));
@@ -645,6 +650,10 @@ async function saveLocalInterview(index) {
   } catch (error) {
     item.localPersistError = error.message;
   }
+}
+
+async function saveLocalInterview(index) {
+  return saveLocalInterviewItem(state.interviews[index]);
 }
 
 async function loadLocalInterviews() {
@@ -744,6 +753,24 @@ function normalizeLoadedInterviewState(item) {
   item.uploadProgress = null;
   item.persisting = false;
   return item;
+}
+
+async function persistInterviewIdentityRepair(repair) {
+  const { item, previousId } = repair;
+  if (!item.serverId && previousId && previousId !== item.id) {
+    await deleteLocalInterview({ ...item, id: previousId }, { remember: false });
+  }
+  if (item.serverId) {
+    const response = await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(interviewPayload(item))
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `无法更新 ${item.id} 的唯一编码`);
+    if (data.item) applyPersistedItem(item, data.item);
+  }
+  await saveLocalInterviewItem(item);
 }
 
 function generatedAudioSourceId(item) {
@@ -898,12 +925,20 @@ async function loadInterviewLibrary() {
       }
     }
     state.allInterviews = await removeSupersededVideoSources([...byId.values()].map(normalizeLoadedInterviewState).filter((item) => !isDeletedInterview(item)));
+    const identityRepairs = reconcileInterviewIds(state.allInterviews);
     mergeProjectsFromInterviews();
     saveProjects();
     syncCurrentProjectInterviews();
     state.libraryLoaded = true;
     renderAll();
-    if (state.interviews.length) toast(`已恢复 ${state.interviews.length} 份账号资料`);
+    const repairResults = await Promise.allSettled(identityRepairs.map(persistInterviewIdentityRepair));
+    const repairFailures = repairResults.filter((result) => result.status === "rejected").length;
+    if (repairFailures) {
+      toast(`已在当前页面修复重复编码，但有 ${repairFailures} 份资料未能回写账号，请稍后刷新重试`, 6500);
+    } else if (state.interviews.length) {
+      const repairText = identityRepairs.length ? ` · 已自动校正 ${identityRepairs.length} 个编码` : "";
+      toast(`已恢复 ${state.interviews.length} 份账号资料${repairText}`);
+    }
   } catch (error) {
     state.libraryLoaded = true;
     state.libraryError = error.message || "资料库加载失败";
