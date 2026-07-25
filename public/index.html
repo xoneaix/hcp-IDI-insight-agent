@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" href="assets/medvoice-logo-v4.webp" as="image" type="image/webp" fetchpriority="high" />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=20260725.4" />
+    <link rel="stylesheet" href="style.css?v=20260725.5" />
   </head>
   <body>
     <div class="app-shell">
@@ -143,7 +143,10 @@
               </div>
             </div>
             <div class="library-toolbar"><p id="fileSummary">0 份访谈 · 等待导入</p><div class="table-actions"><button id="selectAll">全选</button><button class="text-button danger-text" id="clearFiles">删除所选</button></div></div>
-            <div class="table-wrap transcript-table-wrap"><table class="transcript-table"><thead><tr><th><input id="masterCheck" type="checkbox" aria-label="全选" /></th><th>资料 / 受访者</th><th>类型</th><th>时长</th><th>处理状态</th><th>下一步操作</th></tr></thead><tbody id="transcriptTable"></tbody></table></div>
+            <div class="transcript-table-shell" id="transcriptTableShell">
+              <div class="table-wrap transcript-table-wrap" id="transcriptTableScroll"><table class="transcript-table"><thead><tr><th><input id="masterCheck" type="checkbox" aria-label="全选" /></th><th>资料 / 受访者</th><th>类型</th><th>时长</th><th>处理状态</th><th>下一步操作</th></tr></thead><tbody id="transcriptTable"></tbody></table></div>
+              <span class="library-scroll-hint" id="libraryScrollHint" hidden>↓ 向下滚动查看更多资料</span>
+            </div>
           </article>
           <article class="panel role-mapper-panel">
             <div class="role-mapper-head">
@@ -254,6 +257,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="app.js?v=20260725.3"></script>
+    <script type="module" src="app.js?v=20260725.4"></script>
   </body>
 </html>

@@ -1060,6 +1060,23 @@ function renderTranscripts() {
   $$(".transcribe-button").forEach((button) => button.addEventListener("click", () => transcribeInterview(+button.dataset.index)));
   $$(".role-row-button").forEach((button) => button.addEventListener("click", () => identifyRoleForInterview(+button.dataset.index)));
   $("#retryLibraryLoad")?.addEventListener("click", loadInterviewLibrary);
+  const transcriptTableScroll = $("#transcriptTableScroll");
+  if (transcriptTableScroll) transcriptTableScroll.onscroll = updateTranscriptTableScrollState;
+  updateTranscriptTableScrollState();
+  requestAnimationFrame(() => requestAnimationFrame(updateTranscriptTableScrollState));
+  document.fonts?.ready.then(updateTranscriptTableScrollState).catch(() => {});
+}
+
+function updateTranscriptTableScrollState() {
+  const scroller = $("#transcriptTableScroll");
+  const shell = $("#transcriptTableShell");
+  const hint = $("#libraryScrollHint");
+  if (!scroller || !shell || !hint) return;
+  const scrollable = scroller.scrollHeight > scroller.clientHeight + 4;
+  const atBottom = !scrollable || scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 8;
+  shell.classList.toggle("scrollable", scrollable);
+  shell.classList.toggle("at-bottom", atBottom);
+  hint.hidden = !scrollable || atBottom;
 }
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -2050,7 +2067,10 @@ $("#projectSelect").addEventListener("change", (event) => setActiveProject(event
 $("#renameProject").addEventListener("click", renameCurrentProject);
 $("#createProject").addEventListener("click", createProject);
 window.addEventListener("hashchange", () => showView(savedView(), { updateHash: false }));
-window.addEventListener("resize", updateRolePreviewScrollState);
+window.addEventListener("resize", () => {
+  updateTranscriptTableScrollState();
+  updateRolePreviewScrollState();
+});
 
 async function initializeApp() {
   const initialView = savedView(INITIAL_HASH);
