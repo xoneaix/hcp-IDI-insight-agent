@@ -403,11 +403,11 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .sample-assignment-head button{padding:5px 8px;border:0;border-radius:7px;background:#fff;color:#4d7165;font-size:9px;font-weight:700;cursor:pointer}
 .sample-assignment-head button:disabled{background:transparent}
 .analysis-sample-picker{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;max-height:230px;padding:10px;border:1px solid #e3e9e6;border-top:0;border-radius:0 0 12px 12px;overflow-y:auto;background:#fff;scrollbar-width:thin;scrollbar-color:#a9bdb4 #edf2ef}
-.analysis-sample-card{display:grid;grid-template-columns:auto 48px minmax(0,1fr) auto;align-items:center;gap:9px;min-width:0;padding:10px;border:1px solid #e5ebe8;border-radius:10px;background:#fbfcfb;cursor:pointer;transition:border-color .18s,background .18s}
+.analysis-sample-card{display:grid;grid-template-columns:auto 76px minmax(0,1fr) auto;align-items:center;gap:9px;min-width:0;padding:10px;border:1px solid #e5ebe8;border-radius:10px;background:#fbfcfb;cursor:pointer;transition:border-color .18s,background .18s}
 .analysis-sample-card:hover{border-color:#b8cbc2;background:#f8fbf9}
 .analysis-sample-card.selected{border-color:#9ab9ac;background:#eef6f1}
 .analysis-sample-card input{width:15px;height:15px;accent-color:var(--green)}
-.analysis-sample-code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#476e61;font:700 8px "DM Mono"}
+.analysis-sample-code{overflow:visible;white-space:nowrap;color:#476e61;font:700 8px "DM Mono";letter-spacing:-.15px}
 .analysis-sample-card div{min-width:0}
 .analysis-sample-card strong,.analysis-sample-card small{display:block}
 .analysis-sample-card strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#33423d;font-size:9px}
@@ -474,6 +474,7 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 
 /* Authenticated trial identity: a compact, personal anchor beside workspace utilities. */
 .trial-user-card{margin:10px 0 0;padding:10px 11px;border:1px solid rgba(255,255,255,.1);border-radius:11px;background:rgba(255,255,255,.045)}
+.trial-user-card[hidden]{display:none!important}
 .trial-user-card>span{width:34px;height:34px;border:1px solid rgba(223,242,91,.2);border-radius:10px;background:linear-gradient(145deg,#315b4f,#264b42);color:#e8f59c;font:700 11px/1 "DM Mono";letter-spacing:.6px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.025)}
 .trial-user-card strong{overflow:hidden;color:#f3f7f5;font-size:10px;text-overflow:ellipsis;white-space:nowrap}
 .trial-user-card small{overflow:hidden;margin-top:3px;color:#91aaa1;font-size:8px;text-overflow:ellipsis;white-space:nowrap}

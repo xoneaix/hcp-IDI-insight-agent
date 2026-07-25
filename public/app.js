@@ -2019,10 +2019,13 @@ function renderOutlineGuideManager() {
     ? eligible.map((item) => {
       const key = analysisSampleKey(item);
       const exchangeCount = item.roleResult?.exchanges?.length || 0;
+      const documentIdentity = roleDocumentForExport(item);
+      const respondentCode = documentIdentity?.document_id || item.id;
+      const respondentType = documentIdentity?.type || normalizeRespondentType(item.type);
       return `<label class="analysis-sample-card ${selected.has(key) ? "selected" : ""}">
-        <input class="analysis-sample-check" type="checkbox" value="${escapeHTML(key)}" aria-label="将 ${escapeHTML(item.id || item.name || "该样本")} 绑定到当前大纲" ${selected.has(key) ? "checked" : ""} />
-        <span class="analysis-sample-code">${escapeHTML(item.id)}</span>
-        <div><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(normalizeRespondentType(item.type))} · 已转录 · ${exchangeCount} 组问答</small></div>
+        <input class="analysis-sample-check" type="checkbox" value="${escapeHTML(key)}" aria-label="将 ${escapeHTML(respondentCode || item.name || "该样本")} 绑定到当前大纲" ${selected.has(key) ? "checked" : ""} />
+        <span class="analysis-sample-code" title="${escapeHTML(respondentCode)}">${escapeHTML(respondentCode)}</span>
+        <div><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(respondentType)} · 已转录 · ${exchangeCount} 组问答</small></div>
         <em>${selected.has(key) ? "已绑定" : "待选择"}</em>
       </label>`;
     }).join("")
