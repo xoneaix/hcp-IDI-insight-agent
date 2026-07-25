@@ -1785,6 +1785,8 @@ function renderQuestions() {
   const guide = activeOutlineGuide();
   const guideTitleInput = $("#outlineGuideTitle");
   if (guideTitleInput && guide) guideTitleInput.value = guide.title;
+  const guideLabel = $("#activeOutlineGuideLabel");
+  if (guideLabel && guide) guideLabel.textContent = guide.title;
   $("#dimensionCount").textContent = activeGroups.length;
   $("#questionCount").textContent = state.questions.length;
   let questionNumber = 0;
@@ -1813,15 +1815,19 @@ function renderQuestions() {
       : `来源：${state.outlineSource}`
     : "尚未载入大纲";
   const fileCard = $("#outlineFileCard");
+  const uploadArea = $("#outlineUpload");
   if (state.outlineFileMeta) {
     const extension = String(state.outlineFileMeta.name || "").split(".").pop()?.toUpperCase() || "DOC";
+    uploadArea.hidden = true;
     fileCard.hidden = false;
-    fileCard.innerHTML = `<span class="outline-file-icon">${escapeHTML(extension.slice(0, 4))}</span><div><strong>${escapeHTML(state.outlineFileMeta.name)}</strong><small>${formatFileSize(state.outlineFileMeta.size || 0)} · 已完成内容提取${state.outlineFileMeta.edited ? " · 已人工校正" : ""}</small></div><span class="outline-file-status">✓ ${activeGroups.length} 个维度 · ${state.questions.length} 题</span><button id="replaceOutlineFile" type="button">替换文件</button>`;
+    fileCard.innerHTML = `<span class="outline-file-icon">${escapeHTML(extension.slice(0, 4))}</span><div><strong>${escapeHTML(state.outlineFileMeta.name)}</strong><small>${formatFileSize(state.outlineFileMeta.size || 0)} · 已完成内容提取${state.outlineFileMeta.edited ? " · 已人工校正" : ""}</small></div><span class="outline-file-status">✓ ${activeGroups.length} 个维度 · ${state.questions.length} 题</span><div class="outline-file-actions"><button id="replaceOutlineFile" type="button">替换文件</button><button class="danger" id="deleteOutlineFile" type="button">删除大纲</button></div>`;
     $("#replaceOutlineFile").addEventListener("click", () => {
       state.outlineUploadMode = "replace";
       $("#outlineFile").click();
     });
+    $("#deleteOutlineFile").addEventListener("click", () => deleteOutlineGuide(guide.id));
   } else {
+    uploadArea.hidden = false;
     fileCard.hidden = true;
     fileCard.innerHTML = "";
   }
@@ -1899,33 +1905,25 @@ function switchOutlineGuide(guideId) {
   renderAll();
 }
 
-function addOutlineGuide() {
-  syncActiveOutlineGuideFromState();
-  const guide = blankOutlineGuide();
-  state.outlineGuides.push(guide);
-  state.activeOutlineGuideId = guide.id;
-  state.outlineUploadMode = "add";
-  applyOutlineGuideToState(guide);
-  saveCurrentProjectWorkspace();
-  renderAll();
-  $("#outlineGuideTitle")?.focus();
-}
-
-function deleteActiveOutlineGuide() {
-  const guide = activeOutlineGuide();
+function deleteOutlineGuide(guideId = state.activeOutlineGuideId) {
+  const guide = state.outlineGuides.find((item) => item.id === guideId);
   if (!guide) return;
   const hasContent = Boolean(guide.outlineText || guide.questions?.length || guide.sampleIds?.length || guide.report);
   if (hasContent && !confirm(`确定删除“${guide.title}”及其样本绑定和分析结果吗？其他访谈大纲不会受影响。`)) return;
+  syncActiveOutlineGuideFromState();
+  const deletingActiveGuide = guide.id === state.activeOutlineGuideId;
   const index = state.outlineGuides.indexOf(guide);
   state.outlineGuides.splice(index, 1);
   if (!state.outlineGuides.length) state.outlineGuides.push(blankOutlineGuide(0));
-  const next = state.outlineGuides[Math.min(index, state.outlineGuides.length - 1)];
+  const next = deletingActiveGuide
+    ? state.outlineGuides[Math.min(index, state.outlineGuides.length - 1)]
+    : activeOutlineGuide() || state.outlineGuides[0];
   state.activeOutlineGuideId = next.id;
   state.outlineUploadMode = "add";
   applyOutlineGuideToState(next);
   saveCurrentProjectWorkspace();
   renderAll();
-  toast("当前访谈大纲已删除");
+  toast(`已删除访谈大纲“${guide.title}”`);
 }
 
 function updateActiveGuideSamples(sampleIds) {
@@ -1947,17 +1945,22 @@ function renderOutlineGuideManager() {
     const questions = item.questions?.length || 0;
     const selectedSamples = item.sampleIds?.length || 0;
     const hasResults = Boolean(item.report || item.matrix?.length);
-    return `<button class="outline-guide-tab ${item.id === guide.id ? "active" : ""}" data-guide-id="${escapeHTML(item.id)}" type="button">
-      <span>${String(index + 1).padStart(2, "0")}</span>
-      <div><strong>${escapeHTML(item.title)}</strong><small>${dimensions} 维度 · ${questions} 题 · ${selectedSamples} 样本</small></div>
-      ${hasResults ? '<em>已分析</em>' : '<em>待分析</em>'}
-    </button>`;
+    return `<div class="outline-guide-card ${item.id === guide.id ? "active" : ""}">
+      <button class="outline-guide-tab" data-guide-id="${escapeHTML(item.id)}" type="button">
+        <span>${String(index + 1).padStart(2, "0")}</span>
+        <div><strong>${escapeHTML(item.title)}</strong><small>${dimensions} 维度 · ${questions} 题 · ${selectedSamples} 样本</small></div>
+        ${hasResults ? '<em>已分析</em>' : '<em>待分析</em>'}
+      </button>
+      <button class="outline-guide-remove" data-guide-id="${escapeHTML(item.id)}" type="button" aria-label="删除大纲 ${escapeHTML(item.title)}" title="删除该大纲">×</button>
+    </div>`;
   }).join("");
   $$(".outline-guide-tab").forEach((button) => button.addEventListener("click", () => switchOutlineGuide(button.dataset.guideId)));
+  $$(".outline-guide-remove").forEach((button) => button.addEventListener("click", () => deleteOutlineGuide(button.dataset.guideId)));
 
   const eligible = eligibleAnalysisSamples();
   const selected = new Set(guide.sampleIds || []);
   const selectedEligible = eligible.filter((item) => selected.has(analysisSampleKey(item)));
+  $("#activeOutlineGuideLabel").textContent = guide.title;
   $("#sampleAssignmentTitle").textContent = `为“${guide.title}”选择样本`;
   $("#sampleAssignmentSummary").textContent = `${selectedEligible.length} 个已选 · ${eligible.length} 个可用`;
   $("#selectAllAnalysisSamples").disabled = !eligible.length || selectedEligible.length === eligible.length;
@@ -2393,15 +2396,18 @@ $("#toggleAllRolePreviews")?.addEventListener("click", () => {
 });
 $("#deleteRoleDocs").addEventListener("click", deleteSelectedRoleDocs);
 $("#exportRoleWord").addEventListener("click", exportRoleWord);
-$("#browseOutline").addEventListener("click", (event) => { event.stopPropagation(); state.outlineUploadMode = "add"; $("#outlineFile").click(); });
-$("#outlineUpload").addEventListener("click", (event) => { if (!event.target.closest("button")) { state.outlineUploadMode = "add"; $("#outlineFile").click(); } });
-$("#outlineUpload").addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { state.outlineUploadMode = "add"; $("#outlineFile").click(); } });
+$("#browseOutline").addEventListener("click", (event) => { event.stopPropagation(); state.outlineUploadMode = "replace"; $("#outlineFile").click(); });
+$("#outlineUpload").addEventListener("click", (event) => { if (!event.target.closest("button")) { state.outlineUploadMode = "replace"; $("#outlineFile").click(); } });
+$("#outlineUpload").addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { state.outlineUploadMode = "replace"; $("#outlineFile").click(); } });
 $("#outlineFile").addEventListener("change", (event) => {
   if (event.target.files[0]) uploadOutline(event.target.files[0]);
   event.target.value = "";
 });
 $("#parseOutline").addEventListener("click", parseOutlineFromText);
-$("#addOutlineGuide").addEventListener("click", addOutlineGuide);
+$("#addOutlineGuide").addEventListener("click", () => {
+  state.outlineUploadMode = "add";
+  $("#outlineFile").click();
+});
 $("#outlineGuideTitle").addEventListener("input", (event) => {
   const guide = activeOutlineGuide();
   if (!guide) return;
@@ -2425,7 +2431,6 @@ $("#addQuestionGroup").addEventListener("click", () => {
   state.questionGroups.push({ title: "新问题维度", questions: [""] });
   syncQuestionFramework({ rerender: true });
 });
-$("#clearOutline").addEventListener("click", deleteActiveOutlineGuide);
 $("#runOutlineAnalysis").addEventListener("click", runAnalysis);
 $("#exportExcel").addEventListener("click", () => downloadExport("xlsx"));
 $("#exportWord").addEventListener("click", () => downloadExport("docx"));

@@ -341,18 +341,29 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .outline-batch-head h2{margin:3px 0 4px;font-size:18px}
 .outline-batch-head p{margin:0;color:var(--muted);font-size:10px;line-height:1.6}
 .outline-batch-head .secondary-button{white-space:nowrap}
+.outline-upload-primary{border-color:#285f50!important;background:#285f50!important;color:#fff!important;box-shadow:0 8px 18px rgba(36,92,77,.14)}
+.outline-upload-primary:hover{background:#1f5144!important;transform:translateY(-1px)}
 .outline-guide-tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:9px;margin-bottom:16px}
-.outline-guide-tab{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:10px;min-width:0;padding:11px 12px;border:1px solid #e0e7e3;border-radius:12px;background:#fbfcfb;color:#50615b;text-align:left;cursor:pointer;transition:border-color .18s,background .18s,box-shadow .18s,transform .18s}
-.outline-guide-tab:hover{border-color:#b8cbc2;transform:translateY(-1px)}
-.outline-guide-tab.active{border-color:#8fb1a2;background:#f1f7f3;box-shadow:0 7px 18px rgba(36,92,77,.07)}
+.outline-guide-card{position:relative;min-width:0;border:1px solid #e0e7e3;border-radius:12px;background:#fbfcfb;transition:border-color .18s,background .18s,box-shadow .18s,transform .18s}
+.outline-guide-card:hover{border-color:#b8cbc2;transform:translateY(-1px)}
+.outline-guide-card.active{border-color:#8fb1a2;background:#f1f7f3;box-shadow:0 7px 18px rgba(36,92,77,.07)}
+.outline-guide-tab{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;min-width:0;padding:11px 38px 11px 12px;border:0;border-radius:inherit;background:transparent;color:#50615b;text-align:left;cursor:pointer}
 .outline-guide-tab>span{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:#e8f1ec;color:#4a7466;font:700 9px "DM Mono"}
-.outline-guide-tab.active>span{background:#245c4d;color:#dff25b}
+.outline-guide-card.active .outline-guide-tab>span{background:#245c4d;color:#dff25b}
 .outline-guide-tab div{min-width:0}
 .outline-guide-tab strong,.outline-guide-tab small{display:block}
 .outline-guide-tab strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#26372f;font-size:11px}
 .outline-guide-tab small{margin-top:4px;color:#84908b;font-size:8px}
 .outline-guide-tab em{padding:4px 6px;border-radius:999px;background:#f0f3f1;color:#85908c;font-style:normal;font-size:8px;white-space:nowrap}
-.outline-guide-tab.active em{background:#dfece5;color:#3f725f}
+.outline-guide-card.active .outline-guide-tab em{background:#dfece5;color:#3f725f}
+.outline-guide-remove{position:absolute;top:7px;right:7px;display:grid;place-items:center;width:24px;height:24px;border:0;border-radius:7px;background:transparent;color:#a0aaa6;font-size:17px;line-height:1;cursor:pointer;transition:color .18s,background .18s}
+.outline-guide-remove:hover{background:#fff0f0;color:#a34f53}
+.outline-file-manager{margin-bottom:14px;padding:14px;border:1px solid #dfe8e4;border-radius:13px;background:linear-gradient(135deg,#f7faf8,#fbfcfb)}
+.outline-file-manager-head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:11px}
+.outline-file-manager-head>div{display:flex;align-items:center;gap:8px;min-width:0}
+.outline-file-manager-head span{color:#7c8984;font-size:8px;font-weight:700;letter-spacing:.3px}
+.outline-file-manager-head strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#2f453e;font-size:11px}
+.outline-file-manager-head small{color:#88948f;font-size:8px;text-align:right}
 .sample-assignment-head{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:13px 14px;border-radius:11px 11px 0 0;background:#f1f5f3}
 .sample-assignment-head strong,.sample-assignment-head small{display:block}
 .sample-assignment-head strong{font-size:11px}
@@ -381,17 +392,18 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 #outline-view .outline-head>div>span{width:38px;height:38px;border-radius:11px;background:#edf4f0;border-color:#dce7e1;font-weight:700}
 #outline-view .outline-head h2{font-size:17px}
 #outline-view .outline-head p{font-size:11px}
-.outline-guide-title-field{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:12px;margin-bottom:12px;padding:10px 12px;border:1px solid #e0e8e4;border-radius:11px;background:#f6f9f7}
+.outline-guide-title-field{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:12px;margin-bottom:10px;padding:9px 11px;border:1px solid #e0e8e4;border-radius:10px;background:#fff}
 .outline-guide-title-field span{color:#6c7b75;font-size:9px;font-weight:700;white-space:nowrap}
 .outline-guide-title-field input{min-width:0;padding:5px 7px;border:0;border-bottom:1px solid transparent;background:transparent;color:#273a33;font-size:11px;font-weight:700;outline:0}
 .outline-guide-title-field input:focus{border-bottom-color:#81a494}
-#outline-view .outline-upload{margin-bottom:12px;padding:15px 16px;border-color:#b8ccc3;border-radius:12px;background:#f8fbf9;transition:border-color .18s,background .18s,box-shadow .18s}
+#outline-view .outline-upload{margin-bottom:0;padding:13px 14px;border-color:#b8ccc3;border-radius:11px;background:#fff;transition:border-color .18s,background .18s,box-shadow .18s}
+#outline-view .outline-upload[hidden]{display:none}
 #outline-view .outline-upload:hover{border-color:#8eafa0;background:#f4f9f6;box-shadow:0 8px 22px rgba(35,76,62,.05)}
 #outline-view .outline-upload>span{width:38px;height:38px;border-radius:10px;font-size:18px}
 #outline-view .outline-upload strong{font-size:12px}
 #outline-view .outline-upload small{font-size:9px;line-height:1.55}
 #outline-view .outline-upload .secondary-button{padding:8px 12px;font-size:10px;white-space:nowrap}
-.outline-file-card{display:grid;grid-template-columns:42px minmax(0,1fr) auto auto;align-items:center;gap:12px;margin:0 0 14px;padding:12px 13px;border:1px solid #dce7e2;border-radius:12px;background:linear-gradient(135deg,#f5faf7,#fbfcfb)}
+.outline-file-card{display:grid;grid-template-columns:42px minmax(0,1fr) auto auto;align-items:center;gap:12px;margin:0;padding:12px 13px;border:1px solid #dce7e2;border-radius:11px;background:#fff}
 .outline-file-card[hidden]{display:none}
 .outline-file-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:10px;background:#245c4d;color:#dff25b;font:700 8px "DM Mono";letter-spacing:.4px}
 .outline-file-card>div{min-width:0}
@@ -399,8 +411,11 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .outline-file-card strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#26372f;font-size:11px}
 .outline-file-card small{margin-top:4px;color:#7b8983;font-size:9px}
 .outline-file-status{padding:6px 9px;border-radius:999px;background:#e8f3ed;color:#3f735f;font-size:9px;font-weight:700;white-space:nowrap}
-.outline-file-card button{border:0;background:none;color:#55766b;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap}
+.outline-file-actions{display:flex;align-items:center;gap:4px}
+.outline-file-card button{padding:5px 7px;border:0;border-radius:7px;background:#f1f6f3;color:#55766b;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap}
 .outline-file-card button:hover{color:var(--green)}
+.outline-file-card button.danger{background:#fff5f4;color:#a76060}
+.outline-file-card button.danger:hover{background:#fde9e7;color:#984646}
 #outline-view #outlineInput{min-height:420px;resize:vertical;border-radius:12px;background:#fbfcfb;font-size:11px;line-height:1.8}
 #outline-view .outline-meta{margin-top:11px}
 #outline-view .outline-meta span{line-height:1.5}
@@ -446,12 +461,14 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
   .outline-batch-panel{padding:18px}
   .outline-batch-head,.sample-assignment-head{display:block}
   .outline-batch-head .secondary-button{width:100%;margin-top:12px}
+  .outline-file-manager-head{display:block}
+  .outline-file-manager-head small{display:block;margin-top:5px;text-align:left}
   .sample-assignment-head>div:last-child{margin-top:9px}
   .analysis-sample-picker{grid-template-columns:1fr}
   #outline-view .outline-card,#outline-view .question-panel{padding:18px}
   .outline-file-card{grid-template-columns:38px minmax(0,1fr) auto}
   .outline-file-status{grid-column:2/-1;width:max-content}
-  .outline-file-card button{grid-column:3;grid-row:1}
+  .outline-file-actions{grid-column:2/-1}
   .question-panel-counts{margin-top:10px}
   #outline-view .question-panel>.panel-head{display:block}
   .question-group-head{grid-template-columns:32px minmax(0,1fr) 25px}
@@ -462,6 +479,8 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
   .outline-batch-head p{font-size:11px}
   .outline-guide-tab strong{font-size:12px}
   .outline-guide-tab small,.outline-guide-tab em{font-size:9px}
+  .outline-file-manager-head strong{font-size:12px}
+  .outline-file-manager-head span,.outline-file-manager-head small{font-size:9px}
   .sample-assignment-head strong{font-size:12px}
   .sample-assignment-head small,.sample-assignment-head button{font-size:10px}
   .analysis-sample-card strong{font-size:10px}

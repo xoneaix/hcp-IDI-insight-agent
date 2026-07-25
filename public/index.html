@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" href="assets/medvoice-logo-v4.webp" as="image" type="image/webp" fetchpriority="high" />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=20260725.10" />
+    <link rel="stylesheet" href="style.css?v=20260726.1" />
   </head>
   <body>
     <div class="app-shell">
@@ -180,22 +180,28 @@
           </div>
           <article class="panel outline-batch-panel">
             <div class="outline-batch-head">
-              <div><div class="eyebrow">ANALYSIS COHORTS</div><h2>访谈大纲与样本批次</h2><p>每份大纲独立绑定对应人群；仅显示已转录并完成角色区分的样本。</p></div>
-              <button class="secondary-button" id="addOutlineGuide" type="button">＋ 新增访谈大纲</button>
+              <div><div class="eyebrow">ANALYSIS COHORTS</div><h2>访谈大纲与样本批次</h2><p>先上传大纲，再为每份大纲绑定对应人群；不同批次的分析结果相互独立。</p></div>
+              <button class="secondary-button outline-upload-primary" id="addOutlineGuide" type="button">＋ 上传访谈大纲</button>
             </div>
+            <input id="outlineFile" type="file" accept=".docx,.pdf,.txt,.md" hidden />
             <div class="outline-guide-tabs" id="outlineGuideTabs"></div>
+            <section class="outline-file-manager" aria-label="当前访谈大纲文件">
+              <div class="outline-file-manager-head">
+                <div><span>当前分析场景</span><strong id="activeOutlineGuideLabel">访谈大纲 1</strong></div>
+                <small>上传错误时，可直接替换文件或删除整个大纲批次。</small>
+              </div>
+              <label class="outline-guide-title-field"><span>场景名称</span><input id="outlineGuideTitle" maxlength="80" placeholder="例如：院外复购患者 / 院外首购患者" /></label>
+              <div class="outline-upload" id="outlineUpload" role="button" tabindex="0">
+                <span>⇧</span><div><strong>为当前批次上传 Word / PDF 大纲</strong><small>支持 DOCX · PDF · TXT · MD，上传后自动提取维度与问题</small></div><button class="secondary-button" id="browseOutline" type="button">选择文件</button>
+              </div>
+              <div class="outline-file-card" id="outlineFileCard" hidden></div>
+            </section>
             <div class="sample-assignment-head"><div><strong id="sampleAssignmentTitle">为当前大纲选择样本</strong><small id="sampleAssignmentSummary">0 个可用样本</small></div><div><button id="selectAllAnalysisSamples" type="button">全选可用样本</button><button id="clearAnalysisSamples" type="button">清空选择</button></div></div>
             <div class="analysis-sample-picker" id="analysisSamplePicker"></div>
           </article>
           <div class="outline-workspace">
             <article class="outline-card">
-              <div class="outline-head"><div><span>DG</span><div><h2>研究大纲 / Discussion Guide</h2><p>可上传 Word、PDF，或直接粘贴与编辑文本。</p></div></div><button id="clearOutline">删除此大纲</button></div>
-              <label class="outline-guide-title-field"><span>分析场景名称</span><input id="outlineGuideTitle" maxlength="80" placeholder="例如：院外复购患者 / 院外首购患者" /></label>
-              <div class="outline-upload" id="outlineUpload" role="button" tabindex="0">
-                <input id="outlineFile" type="file" accept=".docx,.pdf,.txt,.md" hidden />
-                <span>⇧</span><div><strong>上传新的 Word / PDF 大纲</strong><small>已有大纲时会创建新批次；DOCX · PDF · TXT · MD</small></div><button class="secondary-button" id="browseOutline">选择文件</button>
-              </div>
-              <div class="outline-file-card" id="outlineFileCard" hidden></div>
+              <div class="outline-head"><div><span>DG</span><div><h2>大纲内容校正</h2><p>检查抽取内容，必要时校正文本后重新识别主要问题。</p></div></div></div>
               <textarea id="outlineInput" rows="13" placeholder="在此粘贴访谈大纲。例如：&#10;1. 请描述当前诊疗决策流程？&#10;2. 选择治疗方案时最重要的驱动因素是什么？&#10;3. 哪些未满足需求尚未解决？"></textarea>
               <div class="outline-meta"><span id="outlineSource">尚未载入大纲</span><button id="parseOutline">识别主要问题</button></div>
             </article>
@@ -269,6 +275,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="app.js?v=20260725.8"></script>
+    <script type="module" src="app.js?v=20260726.1"></script>
   </body>
 </html>
