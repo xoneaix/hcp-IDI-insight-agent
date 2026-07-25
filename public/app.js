@@ -33,6 +33,7 @@ const state = {
   recording: null,
   currentQuote: null
 };
+let outlineRenameGuideId = "";
 
 const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:4174" : "";
 const WORKSPACE_URL = location.protocol === "file:" ? "index.html" : "/";
@@ -1895,6 +1896,34 @@ function replaceOutlineGuide(guideId) {
   $("#outlineFile").click();
 }
 
+function openOutlineGuideRename(guideId) {
+  const guide = state.outlineGuides.find((item) => item.id === guideId);
+  if (!guide) return;
+  outlineRenameGuideId = guide.id;
+  $("#outlineRenameInput").value = guide.title;
+  $("#outlineRenameDialog").showModal();
+  $("#outlineRenameInput").focus();
+  $("#outlineRenameInput").select();
+}
+
+function closeOutlineGuideRename() {
+  outlineRenameGuideId = "";
+  $("#outlineRenameDialog").close();
+}
+
+function saveOutlineGuideRename(event) {
+  event.preventDefault();
+  const guide = state.outlineGuides.find((item) => item.id === outlineRenameGuideId);
+  if (!guide) return closeOutlineGuideRename();
+  const name = $("#outlineRenameInput").value.trim().slice(0, 80);
+  if (!name) return toast("请输入访谈大纲名称");
+  guide.title = name;
+  saveCurrentProjectWorkspace();
+  closeOutlineGuideRename();
+  renderAll();
+  toast(`访谈大纲已重命名为“${name}”`);
+}
+
 function deleteOutlineGuide(guideId = state.activeOutlineGuideId) {
   const guide = state.outlineGuides.find((item) => item.id === guideId);
   if (!guide) return;
@@ -1939,19 +1968,30 @@ function renderOutlineGuideManager() {
     const extension = item.outlineFileMeta || item.outlineSource
       ? String(fileName).split(".").pop()?.toUpperCase().slice(0, 4) || "DG"
       : "DG";
+    const extensionClass = /^(DOC|DOCX)$/i.test(extension)
+      ? "word"
+      : /^PDF$/i.test(extension)
+        ? "pdf"
+        : /^MD$/i.test(extension)
+          ? "markdown"
+          : /^TXT$/i.test(extension)
+            ? "text"
+            : "generic";
     return `<div class="outline-guide-card ${item.id === guide.id ? "active" : ""}">
       <button class="outline-guide-tab" data-guide-id="${escapeHTML(item.id)}" type="button">
-        <span class="outline-guide-document"><b>${escapeHTML(extension)}</b><i>${String(index + 1).padStart(2, "0")}</i></span>
+        <span class="outline-guide-document ${extensionClass}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h7l4 4v13h-11z"/><path d="M13.5 3.5v4h4M9 12h6m-6 3h6"/></svg><b>${escapeHTML(extension)}</b><i>${String(index + 1).padStart(2, "0")}</i></span>
         <div><strong>${escapeHTML(item.title)}</strong><small>${escapeHTML(fileName)}</small><small class="outline-guide-metrics">${dimensions} 维度 · ${questions} 题 · ${selectedSamples} 样本</small></div>
         ${hasResults ? '<em>已分析</em>' : '<em>待分析</em>'}
       </button>
       <div class="outline-guide-actions">
-        <button class="outline-guide-replace" data-guide-id="${escapeHTML(item.id)}" type="button" aria-label="替换大纲 ${escapeHTML(item.title)}" title="替换该大纲">↻</button>
-        <button class="outline-guide-remove" data-guide-id="${escapeHTML(item.id)}" type="button" aria-label="删除大纲 ${escapeHTML(item.title)}" title="删除该大纲">×</button>
+        <button class="outline-guide-rename" data-guide-id="${escapeHTML(item.id)}" type="button" aria-label="重命名访谈大纲 ${escapeHTML(item.title)}" title="修改名称"><svg viewBox="0 0 18 18" aria-hidden="true"><path d="M3.5 12.7 3 15l2.3-.5 8.2-8.2-1.8-1.8-8.2 8.2Z"/><path d="m10.8 5.4 1.8 1.8"/></svg></button>
+        <button class="outline-guide-replace" data-guide-id="${escapeHTML(item.id)}" type="button" aria-label="替换访谈大纲 ${escapeHTML(item.title)}" title="替换文件"><svg viewBox="0 0 18 18" aria-hidden="true"><path d="M14.7 7A6 6 0 1 0 15 11"/><path d="M14.7 3.5V7h-3.5"/></svg></button>
+        <button class="outline-guide-remove" data-guide-id="${escapeHTML(item.id)}" type="button" aria-label="删除访谈大纲 ${escapeHTML(item.title)}" title="删除该大纲"><svg viewBox="0 0 18 18" aria-hidden="true"><path d="m5 5 8 8m0-8-8 8"/></svg></button>
       </div>
     </div>`;
   }).join("");
   $$(".outline-guide-tab").forEach((button) => button.addEventListener("click", () => switchOutlineGuide(button.dataset.guideId)));
+  $$(".outline-guide-rename").forEach((button) => button.addEventListener("click", () => openOutlineGuideRename(button.dataset.guideId)));
   $$(".outline-guide-replace").forEach((button) => button.addEventListener("click", () => replaceOutlineGuide(button.dataset.guideId)));
   $$(".outline-guide-remove").forEach((button) => button.addEventListener("click", () => deleteOutlineGuide(button.dataset.guideId)));
 
@@ -2418,6 +2458,10 @@ $("#outlineFile").addEventListener("change", (event) => {
   if (event.target.files[0]) uploadOutline(event.target.files[0]);
   event.target.value = "";
 });
+$("#outlineRenameForm").addEventListener("submit", saveOutlineGuideRename);
+$("#cancelOutlineRename").addEventListener("click", closeOutlineGuideRename);
+$("#closeOutlineRename").addEventListener("click", closeOutlineGuideRename);
+$("#outlineRenameDialog").addEventListener("close", () => { outlineRenameGuideId = ""; });
 $("#parseOutline").addEventListener("click", parseOutlineFromText);
 $("#selectAllAnalysisSamples").addEventListener("click", () => updateActiveGuideSamples(eligibleAnalysisSamples().map(analysisSampleKey)));
 $("#clearAnalysisSamples").addEventListener("click", () => updateActiveGuideSamples([]));
