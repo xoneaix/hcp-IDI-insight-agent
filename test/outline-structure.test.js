@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { flattenQuestionGroups, groupOutlineQuestions, groupsFromQuestions } from "../public/outline-structure.js";
+import { flattenQuestionGroups, groupOutlineQuestions, groupsFromQuestions, stripDimensionDuration } from "../public/outline-structure.js";
 
 test("outline questions are grouped under their nearest numbered dimension", () => {
   const groups = groupOutlineQuestions(`
@@ -49,4 +49,11 @@ test("legacy flat questions migrate into a compatible general group", () => {
     title: "通用问题",
     questions: ["当前治疗体验如何？"]
   }]);
+});
+
+test("dimension labels omit interview duration annotations", () => {
+  assert.equal(stripDimensionDuration("从“长痘”到“重视”的认知觉醒（15分钟）"), "从“长痘”到“重视”的认知觉醒");
+  assert.equal(stripDimensionDuration("购买决策路径 20-25 mins"), "购买决策路径");
+  const groups = groupOutlineQuestions("Part2 院外复购体验（15分钟）\n问题1：您为什么再次购买？");
+  assert.equal(groups[0].title, "院外复购体验");
 });

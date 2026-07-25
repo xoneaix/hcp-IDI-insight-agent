@@ -16,6 +16,13 @@ function questionKey(value) {
   return cleanedQuestion(value).replace(/\s+/g, "").toLowerCase();
 }
 
+export function stripDimensionDuration(value) {
+  return String(value || "")
+    .replace(/\s*[（(]\s*(?:约\s*)?\d+(?:\s*[-–—~至]\s*\d+)?\s*(?:分钟|mins?|minutes?)\s*[）)]\s*$/i, "")
+    .replace(/\s+\d+(?:\s*[-–—~至]\s*\d+)?\s*(?:分钟|mins?|minutes?)\s*$/i, "")
+    .trim();
+}
+
 function looksLikeQuestion(value) {
   const line = cleanedLine(value);
   if (!line) return false;
@@ -28,9 +35,9 @@ function headingTitle(value) {
   const line = cleanedLine(value);
   if (!line || looksLikeQuestion(line)) return "";
   const match = line.match(/^(?:(?:part\s*\d+)|(?:第[一二三四五六七八九十百\d]+[部分章节])|(?:\d+(?:\.\d+)+))\s*[.、:：-]?\s*(.+)$/i);
-  if (match?.[1]) return match[1].trim().replace(/[：:]$/, "");
+  if (match?.[1]) return stripDimensionDuration(match[1].trim().replace(/[：:]$/, ""));
   const chinese = line.match(/^[一二三四五六七八九十]+[、.]\s*(.+)$/);
-  return chinese?.[1]?.trim().replace(/[：:]$/, "") || "";
+  return stripDimensionDuration(chinese?.[1]?.trim().replace(/[：:]$/, "") || "");
 }
 
 function uniqueQuestions(values) {
@@ -51,7 +58,7 @@ export function groupsFromQuestions(questions, title = "通用问题") {
 export function normalizeQuestionGroups(groups) {
   if (!Array.isArray(groups)) return [];
   return groups.map((group) => ({
-    title: String(group?.title || "未命名维度").trim().slice(0, 120) || "未命名维度",
+    title: stripDimensionDuration(String(group?.title || "未命名维度").trim().slice(0, 120)) || "未命名维度",
     questions: uniqueQuestions(Array.isArray(group?.questions) ? group.questions : [])
   })).filter((group) => group.questions.length);
 }

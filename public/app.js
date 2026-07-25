@@ -1,5 +1,5 @@
 import { interviewIdForType, nextInterviewId, repairInterviewIds, roleDocumentForExport } from "./interview-id.js?v=20260725.2";
-import { flattenQuestionGroups, groupOutlineQuestions, groupsFromQuestions, normalizeQuestionGroups } from "./outline-structure.js?v=20260725.1";
+import { flattenQuestionGroups, groupOutlineQuestions, groupsFromQuestions, normalizeQuestionGroups } from "./outline-structure.js?v=20260725.2";
 
 const DEFAULT_PROJECT_ID = "default";
 const DEFAULT_PROJECT_NAME = "未命名访谈项目";
@@ -15,6 +15,9 @@ const state = {
   outlineFileMeta: null,
   questions: [],
   questionGroups: [],
+  outlineGuides: [],
+  activeOutlineGuideId: "",
+  outlineUploadMode: "add",
   analyses: [],
   matrix: [],
   report: null,
@@ -80,13 +83,80 @@ function saveProjects() {
   localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, state.activeProjectId);
 }
 
+function createOutlineGuideId() {
+  return `guide-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function outlineGuideTitle(source = "", index = 0) {
+  const filename = String(source || "").split(/[\\/]/).pop() || "";
+  return filename.replace(/\.(?:docx|pdf|txt|md)$/i, "").trim().slice(0, 80) || `访谈大纲 ${index + 1}`;
+}
+
+function normalizedOutlineGuide(guide = {}, index = 0) {
+  const questionGroups = Array.isArray(guide.questionGroups) && guide.questionGroups.length
+    ? normalizeQuestionGroups(guide.questionGroups)
+    : groupsFromQuestions(Array.isArray(guide.questions) ? guide.questions : []);
+  return {
+    id: String(guide.id || createOutlineGuideId()),
+    title: String(guide.title || outlineGuideTitle(guide.outlineSource, index)).trim().slice(0, 80) || `访谈大纲 ${index + 1}`,
+    outlineText: String(guide.outlineText || ""),
+    outlineSource: String(guide.outlineSource || ""),
+    outlineFileMeta: guide.outlineFileMeta && typeof guide.outlineFileMeta === "object" ? { ...guide.outlineFileMeta } : null,
+    questionGroups,
+    questions: flattenQuestionGroups(questionGroups),
+    sampleIds: [...new Set(Array.isArray(guide.sampleIds) ? guide.sampleIds.map(String).filter(Boolean) : [])],
+    analyses: Array.isArray(guide.analyses) ? guide.analyses : [],
+    matrix: Array.isArray(guide.matrix) ? guide.matrix : [],
+    report: guide.report || null,
+    createdAt: Number(guide.createdAt || Date.now())
+  };
+}
+
+function blankOutlineGuide(index = state.outlineGuides.length) {
+  return normalizedOutlineGuide({ id: createOutlineGuideId(), title: `访谈大纲 ${index + 1}`, createdAt: Date.now() }, index);
+}
+
+function activeOutlineGuide() {
+  return state.outlineGuides.find((guide) => guide.id === state.activeOutlineGuideId) || state.outlineGuides[0] || null;
+}
+
+function syncActiveOutlineGuideFromState() {
+  const guide = activeOutlineGuide();
+  if (!guide) return;
+  guide.outlineText = state.outlineText;
+  guide.outlineSource = state.outlineSource;
+  guide.outlineFileMeta = state.outlineFileMeta ? { ...state.outlineFileMeta } : null;
+  guide.questionGroups = state.questionGroups;
+  guide.questions = state.questions;
+  guide.analyses = state.analyses;
+  guide.matrix = state.matrix;
+  guide.report = state.report;
+}
+
+function applyOutlineGuideToState(guide = activeOutlineGuide()) {
+  if (!guide) return;
+  state.outlineText = guide.outlineText || "";
+  state.outlineSource = guide.outlineSource || "";
+  state.outlineFileMeta = guide.outlineFileMeta ? { ...guide.outlineFileMeta } : null;
+  state.questionGroups = normalizeQuestionGroups(guide.questionGroups || []);
+  state.questions = flattenQuestionGroups(state.questionGroups);
+  state.analyses = Array.isArray(guide.analyses) ? guide.analyses : [];
+  state.matrix = Array.isArray(guide.matrix) ? guide.matrix : [];
+  state.report = guide.report || null;
+  const outlineInput = $("#outlineInput");
+  if (outlineInput) outlineInput.value = state.outlineText;
+}
+
 function saveCurrentProjectWorkspace() {
+  syncActiveOutlineGuideFromState();
   localStorage.setItem(projectDataKey(), JSON.stringify({
     outlineText: state.outlineText,
     outlineSource: state.outlineSource,
     outlineFileMeta: state.outlineFileMeta,
     questions: state.questions,
     questionGroups: state.questionGroups,
+    outlineGuides: state.outlineGuides,
+    activeOutlineGuideId: state.activeOutlineGuideId,
     analyses: state.analyses,
     matrix: state.matrix,
     report: state.report
@@ -96,18 +166,25 @@ function saveCurrentProjectWorkspace() {
 function loadCurrentProjectWorkspace() {
   let data = {};
   try { data = JSON.parse(localStorage.getItem(projectDataKey()) || "{}"); } catch {}
-  state.outlineText = data.outlineText || "";
-  state.outlineSource = data.outlineSource || "";
-  state.outlineFileMeta = data.outlineFileMeta && typeof data.outlineFileMeta === "object" ? data.outlineFileMeta : null;
-  state.questionGroups = Array.isArray(data.questionGroups) && data.questionGroups.length
-    ? normalizeQuestionGroups(data.questionGroups)
-    : groupsFromQuestions(Array.isArray(data.questions) ? data.questions : []);
-  state.questions = flattenQuestionGroups(state.questionGroups);
-  state.analyses = Array.isArray(data.analyses) ? data.analyses : [];
-  state.matrix = Array.isArray(data.matrix) ? data.matrix : [];
-  state.report = data.report || null;
-  const outlineInput = $("#outlineInput");
-  if (outlineInput) outlineInput.value = state.outlineText;
+  const persistedGuides = Array.isArray(data.outlineGuides) ? data.outlineGuides : [];
+  const legacyGuide = {
+    title: outlineGuideTitle(data.outlineSource, 0),
+    outlineText: data.outlineText,
+    outlineSource: data.outlineSource,
+    outlineFileMeta: data.outlineFileMeta,
+    questions: data.questions,
+    questionGroups: data.questionGroups,
+    analyses: data.analyses,
+    matrix: data.matrix,
+    report: data.report
+  };
+  state.outlineGuides = (persistedGuides.length ? persistedGuides : [legacyGuide]).map(normalizedOutlineGuide);
+  if (!state.outlineGuides.length) state.outlineGuides = [blankOutlineGuide(0)];
+  state.activeOutlineGuideId = state.outlineGuides.some((guide) => guide.id === data.activeOutlineGuideId)
+    ? data.activeOutlineGuideId
+    : state.outlineGuides[0].id;
+  state.outlineUploadMode = "add";
+  applyOutlineGuideToState();
 }
 
 function normalizeProjectFields(item = {}) {
@@ -1568,6 +1645,8 @@ async function deleteSelectedRoleDocs() {
     item.roleExpanded = false;
     await persistInterview(index);
   }
+  removeSamplesFromOutlineGuides(items);
+  saveCurrentProjectWorkspace();
   renderAll();
   toast(`已删除 ${indexes.length} 份角色区分结果，原始访谈资料已保留`);
 }
@@ -1658,6 +1737,21 @@ async function uploadOutline(file) {
     const response = await fetch(`${API_BASE}/api/outline/parse`, { method: "POST", body: form });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "大纲解析失败");
+    const currentGuide = activeOutlineGuide();
+    const shouldCreateGuide = state.outlineUploadMode !== "replace"
+      && Boolean(currentGuide?.outlineText || currentGuide?.outlineFileMeta || currentGuide?.questions?.length);
+    if (shouldCreateGuide) {
+      syncActiveOutlineGuideFromState();
+      const nextGuide = blankOutlineGuide();
+      nextGuide.title = outlineGuideTitle(data.filename || file.name, state.outlineGuides.length);
+      state.outlineGuides.push(nextGuide);
+      state.activeOutlineGuideId = nextGuide.id;
+      applyOutlineGuideToState(nextGuide);
+    }
+    const guide = activeOutlineGuide();
+    if (guide && (shouldCreateGuide || /^访谈大纲\s*\d+$/u.test(guide.title))) {
+      guide.title = outlineGuideTitle(data.filename || file.name, state.outlineGuides.indexOf(guide));
+    }
     state.outlineText = data.text;
     state.outlineSource = data.filename;
     state.outlineFileMeta = {
@@ -1676,6 +1770,8 @@ async function uploadOutline(file) {
     toast(`已载入 ${data.filename}，整理出 ${state.questionGroups.length} 个维度、${state.questions.length} 个问题`);
   } catch (error) {
     toast(error.message.includes("fetch") ? "请先启动 MedVoice 本地服务，再解析 Word / PDF" : error.message);
+  } finally {
+    state.outlineUploadMode = "add";
   }
 }
 
@@ -1686,6 +1782,9 @@ function resizeQuestionEditor(editor) {
 
 function renderQuestions() {
   const activeGroups = state.questionGroups.filter((group) => group.questions?.some((question) => String(question).trim()));
+  const guide = activeOutlineGuide();
+  const guideTitleInput = $("#outlineGuideTitle");
+  if (guideTitleInput && guide) guideTitleInput.value = guide.title;
   $("#dimensionCount").textContent = activeGroups.length;
   $("#questionCount").textContent = state.questions.length;
   let questionNumber = 0;
@@ -1718,7 +1817,10 @@ function renderQuestions() {
     const extension = String(state.outlineFileMeta.name || "").split(".").pop()?.toUpperCase() || "DOC";
     fileCard.hidden = false;
     fileCard.innerHTML = `<span class="outline-file-icon">${escapeHTML(extension.slice(0, 4))}</span><div><strong>${escapeHTML(state.outlineFileMeta.name)}</strong><small>${formatFileSize(state.outlineFileMeta.size || 0)} · 已完成内容提取${state.outlineFileMeta.edited ? " · 已人工校正" : ""}</small></div><span class="outline-file-status">✓ ${activeGroups.length} 个维度 · ${state.questions.length} 题</span><button id="replaceOutlineFile" type="button">替换文件</button>`;
-    $("#replaceOutlineFile").addEventListener("click", () => $("#outlineFile").click());
+    $("#replaceOutlineFile").addEventListener("click", () => {
+      state.outlineUploadMode = "replace";
+      $("#outlineFile").click();
+    });
   } else {
     fileCard.hidden = true;
     fileCard.innerHTML = "";
@@ -1759,18 +1861,138 @@ function renderQuestions() {
   }));
 }
 
+function analysisSampleKey(item) {
+  return String(item?.serverId || item?.id || "");
+}
+
+function removeSamplesFromOutlineGuides(items) {
+  const removed = new Set(items.map(analysisSampleKey));
+  for (const guide of state.outlineGuides) {
+    const next = (guide.sampleIds || []).filter((id) => !removed.has(id));
+    if (next.length === (guide.sampleIds || []).length) continue;
+    guide.sampleIds = next;
+    guide.analyses = [];
+    guide.matrix = [];
+    guide.report = null;
+  }
+  applyOutlineGuideToState();
+}
+
+function eligibleAnalysisSamples() {
+  return state.interviews.filter((item) => item.text && item.roleResult);
+}
+
+function selectedAnalysisSamples() {
+  const selected = new Set(activeOutlineGuide()?.sampleIds || []);
+  return eligibleAnalysisSamples().filter((item) => selected.has(analysisSampleKey(item)));
+}
+
+function switchOutlineGuide(guideId) {
+  if (guideId === state.activeOutlineGuideId) return;
+  syncActiveOutlineGuideFromState();
+  const guide = state.outlineGuides.find((item) => item.id === guideId);
+  if (!guide) return;
+  state.activeOutlineGuideId = guide.id;
+  state.outlineUploadMode = "add";
+  applyOutlineGuideToState(guide);
+  saveCurrentProjectWorkspace();
+  renderAll();
+}
+
+function addOutlineGuide() {
+  syncActiveOutlineGuideFromState();
+  const guide = blankOutlineGuide();
+  state.outlineGuides.push(guide);
+  state.activeOutlineGuideId = guide.id;
+  state.outlineUploadMode = "add";
+  applyOutlineGuideToState(guide);
+  saveCurrentProjectWorkspace();
+  renderAll();
+  $("#outlineGuideTitle")?.focus();
+}
+
+function deleteActiveOutlineGuide() {
+  const guide = activeOutlineGuide();
+  if (!guide) return;
+  const hasContent = Boolean(guide.outlineText || guide.questions?.length || guide.sampleIds?.length || guide.report);
+  if (hasContent && !confirm(`确定删除“${guide.title}”及其样本绑定和分析结果吗？其他访谈大纲不会受影响。`)) return;
+  const index = state.outlineGuides.indexOf(guide);
+  state.outlineGuides.splice(index, 1);
+  if (!state.outlineGuides.length) state.outlineGuides.push(blankOutlineGuide(0));
+  const next = state.outlineGuides[Math.min(index, state.outlineGuides.length - 1)];
+  state.activeOutlineGuideId = next.id;
+  state.outlineUploadMode = "add";
+  applyOutlineGuideToState(next);
+  saveCurrentProjectWorkspace();
+  renderAll();
+  toast("当前访谈大纲已删除");
+}
+
+function updateActiveGuideSamples(sampleIds) {
+  const guide = activeOutlineGuide();
+  if (!guide) return;
+  guide.sampleIds = [...new Set(sampleIds.map(String).filter(Boolean))];
+  invalidateOutlineAnalysis();
+  saveCurrentProjectWorkspace();
+  renderAll();
+}
+
+function renderOutlineGuideManager() {
+  const guide = activeOutlineGuide();
+  const tabs = $("#outlineGuideTabs");
+  const picker = $("#analysisSamplePicker");
+  if (!guide || !tabs || !picker) return;
+  tabs.innerHTML = state.outlineGuides.map((item, index) => {
+    const dimensions = item.questionGroups?.filter((group) => group.questions?.length).length || 0;
+    const questions = item.questions?.length || 0;
+    const selectedSamples = item.sampleIds?.length || 0;
+    const hasResults = Boolean(item.report || item.matrix?.length);
+    return `<button class="outline-guide-tab ${item.id === guide.id ? "active" : ""}" data-guide-id="${escapeHTML(item.id)}" type="button">
+      <span>${String(index + 1).padStart(2, "0")}</span>
+      <div><strong>${escapeHTML(item.title)}</strong><small>${dimensions} 维度 · ${questions} 题 · ${selectedSamples} 样本</small></div>
+      ${hasResults ? '<em>已分析</em>' : '<em>待分析</em>'}
+    </button>`;
+  }).join("");
+  $$(".outline-guide-tab").forEach((button) => button.addEventListener("click", () => switchOutlineGuide(button.dataset.guideId)));
+
+  const eligible = eligibleAnalysisSamples();
+  const selected = new Set(guide.sampleIds || []);
+  const selectedEligible = eligible.filter((item) => selected.has(analysisSampleKey(item)));
+  $("#sampleAssignmentTitle").textContent = `为“${guide.title}”选择样本`;
+  $("#sampleAssignmentSummary").textContent = `${selectedEligible.length} 个已选 · ${eligible.length} 个可用`;
+  $("#selectAllAnalysisSamples").disabled = !eligible.length || selectedEligible.length === eligible.length;
+  $("#clearAnalysisSamples").disabled = !selectedEligible.length;
+  picker.innerHTML = eligible.length
+    ? eligible.map((item) => {
+      const key = analysisSampleKey(item);
+      const exchangeCount = item.roleResult?.exchanges?.length || 0;
+      return `<label class="analysis-sample-card ${selected.has(key) ? "selected" : ""}">
+        <input class="analysis-sample-check" type="checkbox" value="${escapeHTML(key)}" aria-label="将 ${escapeHTML(item.id || item.name || "该样本")} 绑定到当前大纲" ${selected.has(key) ? "checked" : ""} />
+        <span class="analysis-sample-code">${escapeHTML(item.id)}</span>
+        <div><strong>${escapeHTML(item.name)}</strong><small>${escapeHTML(normalizeRespondentType(item.type))} · 已转录 · ${exchangeCount} 组问答</small></div>
+        <em>${selected.has(key) ? "已绑定" : "待选择"}</em>
+      </label>`;
+    }).join("")
+    : '<div class="analysis-sample-empty"><strong>暂无可绑定样本</strong><span>请先在“访谈采集与转录”完成转录和角色区分，合格文件会自动同步到这里。</span></div>';
+  $$(".analysis-sample-check").forEach((checkbox) => checkbox.addEventListener("change", () => {
+    const next = new Set(activeOutlineGuide()?.sampleIds || []);
+    if (checkbox.checked) next.add(checkbox.value); else next.delete(checkbox.value);
+    updateActiveGuideSamples([...next]);
+  }));
+}
+
 function selectedInterviews() {
   return state.interviews.filter((item) => item.selected);
 }
 
 function renderReadiness() {
-  const selected = selectedInterviews();
-  const ready = selected.filter((item) => item.text).length;
+  const eligible = eligibleAnalysisSamples();
+  const selected = selectedAnalysisSamples();
   const dimensionCount = state.questionGroups.filter((group) => group.questions?.some((question) => String(question).trim())).length;
-  $("#readyFiles").textContent = `${ready} / ${selected.length}`;
+  $("#readyFiles").textContent = `${selected.length} / ${eligible.length}`;
   $("#readyQuestions").textContent = `${dimensionCount} 维度 / ${state.questions.length} 题`;
-  const isReady = ready > 0 && ready === selected.length && state.questions.length > 0;
-  $("#readyStatus").textContent = isReady ? "可以分析" : "未就绪";
+  const isReady = selected.length > 0 && state.questions.length > 0;
+  $("#readyStatus").textContent = activeOutlineGuide()?.report ? "已完成" : isReady ? "可以分析" : "未就绪";
   $("#runOutlineAnalysis").disabled = !isReady;
 }
 
@@ -1904,9 +2126,8 @@ function setPipeline(step, percent, text) {
 }
 
 async function runAnalysis() {
-  const selected = selectedInterviews();
-  if (!selected.length) return toast("请先选择至少一份访谈");
-  if (selected.some((item) => !item.text)) return toast("所选访谈中仍有待转录文件，请先逐一点击“转录”");
+  const selected = selectedAnalysisSamples();
+  if (!selected.length) return toast("请先为当前访谈大纲绑定至少一份已完成角色区分的样本");
   if (!state.questions.length) return toast("请先导入大纲并识别主要问题");
   const health = await checkHealth();
   if (!health) return toast("请先启动 MedVoice 本地服务");
@@ -1917,10 +2138,11 @@ async function runAnalysis() {
   try {
     await new Promise((resolve) => setTimeout(resolve, 280));
     setPipeline(1, 38, `正在并发分析 ${selected.length} 份访谈 × ${state.questions.length} 个问题…`);
+    const guide = activeOutlineGuide();
     const response = await fetch(`${API_BASE}/api/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectName: state.projectName, outline: state.outlineText, questions: state.questions, documents: selected.map(({ id, name, type, text }) => ({ id, name, type, text })) })
+      body: JSON.stringify({ projectName: `${state.projectName} · ${guide?.title || "访谈大纲"}`, outline: state.outlineText, questions: state.questions, documents: selected.map(({ id, name, type, text }) => ({ id, name, type, text })) })
     });
     setPipeline(2, 70, "正在识别共识、分歧、反例与信息缺口…");
     const data = await response.json();
@@ -1945,7 +2167,8 @@ async function runAnalysis() {
 }
 
 function exportPayload() {
-  return { projectName: state.projectName, questions: state.questions, matrix: state.matrix, report: state.report };
+  const guide = activeOutlineGuide();
+  return { projectName: `${state.projectName} · ${guide?.title || "访谈大纲"}`, questions: state.questions, matrix: state.matrix, report: state.report };
 }
 
 async function downloadExport(kind) {
@@ -2099,6 +2322,7 @@ function renderAll() {
   renderProjectSwitcher();
   renderTranscripts();
   renderRoleMapper();
+  renderOutlineGuideManager();
   renderQuestions();
   renderReadiness();
   renderOverview();
@@ -2146,9 +2370,8 @@ $("#clearFiles").addEventListener("click", async () => {
   const selectedKeys = new Set(selected.map((item) => item.serverId || item.id));
   state.allInterviews = state.allInterviews.filter((item) => !selectedKeys.has(item.serverId || item.id));
   syncCurrentProjectInterviews();
-  state.matrix = [];
-  state.report = null;
-  state.analyses = [];
+  removeSamplesFromOutlineGuides(selected);
+  saveCurrentProjectWorkspace();
   renderAll();
   toast(`已删除 ${selected.length} 份选中资料`);
 });
@@ -2170,14 +2393,24 @@ $("#toggleAllRolePreviews")?.addEventListener("click", () => {
 });
 $("#deleteRoleDocs").addEventListener("click", deleteSelectedRoleDocs);
 $("#exportRoleWord").addEventListener("click", exportRoleWord);
-$("#browseOutline").addEventListener("click", (event) => { event.stopPropagation(); $("#outlineFile").click(); });
-$("#outlineUpload").addEventListener("click", (event) => { if (!event.target.closest("button")) $("#outlineFile").click(); });
-$("#outlineUpload").addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") $("#outlineFile").click(); });
+$("#browseOutline").addEventListener("click", (event) => { event.stopPropagation(); state.outlineUploadMode = "add"; $("#outlineFile").click(); });
+$("#outlineUpload").addEventListener("click", (event) => { if (!event.target.closest("button")) { state.outlineUploadMode = "add"; $("#outlineFile").click(); } });
+$("#outlineUpload").addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { state.outlineUploadMode = "add"; $("#outlineFile").click(); } });
 $("#outlineFile").addEventListener("change", (event) => {
   if (event.target.files[0]) uploadOutline(event.target.files[0]);
   event.target.value = "";
 });
 $("#parseOutline").addEventListener("click", parseOutlineFromText);
+$("#addOutlineGuide").addEventListener("click", addOutlineGuide);
+$("#outlineGuideTitle").addEventListener("input", (event) => {
+  const guide = activeOutlineGuide();
+  if (!guide) return;
+  guide.title = event.target.value.trimStart().slice(0, 80) || "未命名分析场景";
+  saveCurrentProjectWorkspace();
+  renderOutlineGuideManager();
+});
+$("#selectAllAnalysisSamples").addEventListener("click", () => updateActiveGuideSamples(eligibleAnalysisSamples().map(analysisSampleKey)));
+$("#clearAnalysisSamples").addEventListener("click", () => updateActiveGuideSamples([]));
 $("#outlineInput").addEventListener("input", () => {
   state.outlineText = $("#outlineInput").value;
   if (state.outlineFileMeta) {
@@ -2192,17 +2425,7 @@ $("#addQuestionGroup").addEventListener("click", () => {
   state.questionGroups.push({ title: "新问题维度", questions: [""] });
   syncQuestionFramework({ rerender: true });
 });
-$("#clearOutline").addEventListener("click", () => {
-  state.outlineText = "";
-  state.outlineSource = "";
-  state.outlineFileMeta = null;
-  state.questions = [];
-  state.questionGroups = [];
-  invalidateOutlineAnalysis();
-  $("#outlineInput").value = "";
-  saveCurrentProjectWorkspace();
-  renderAll();
-});
+$("#clearOutline").addEventListener("click", deleteActiveOutlineGuide);
 $("#runOutlineAnalysis").addEventListener("click", runAnalysis);
 $("#exportExcel").addEventListener("click", () => downloadExport("xlsx"));
 $("#exportWord").addEventListener("click", () => downloadExport("docx"));
