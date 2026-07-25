@@ -96,8 +96,8 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .library-toolbar .table-actions button{min-height:27px;padding:0 9px;border-radius:7px}
 .transcript-table-wrap{max-height:620px;border:1px solid #e7ece9;border-radius:12px;background:#fff;overscroll-behavior:contain}
 .transcript-table{min-width:990px;table-layout:fixed}
-.transcript-table thead{position:sticky;top:0;z-index:2;background:#f8faf9}
-.transcript-table th{height:38px;padding:0 12px;border-bottom:1px solid #dfe7e3;color:#82908a;font-size:8px;letter-spacing:.4px}
+.transcript-table thead{position:sticky;top:0;z-index:2;background:#f6f9f7;box-shadow:0 1px 0 rgba(18,60,49,.04)}
+.transcript-table th{height:46px;padding:0 12px;border-bottom:1px solid #d9e3de;color:#4f6059;font-size:11px;font-weight:700;letter-spacing:.2px}
 .transcript-table th:nth-child(1){width:46px;text-align:center}
 .transcript-table th:nth-child(2){width:auto}
 .transcript-table th:nth-child(3){width:105px}
@@ -109,7 +109,7 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .transcript-table tbody tr:last-child td{border-bottom:0}
 .transcript-table tbody tr:hover td{background:#fbfdfc}
 .transcript-table td:first-child{text-align:center}
-.transcript-table input[type="checkbox"]{width:14px;height:14px;accent-color:var(--green)}
+.transcript-table input[type="checkbox"]{width:16px;height:16px;accent-color:var(--green)}
 .file-record{display:grid;grid-template-columns:34px minmax(0,1fr);gap:11px;align-items:start;min-width:0}
 .file-kind{display:grid;place-items:center;width:34px;height:34px;border:1px solid #dde7e2;border-radius:9px;background:#f0f5f2;color:#55786c;font:700 7px "DM Mono";letter-spacing:.4px}
 .file-record>div{min-width:0}
