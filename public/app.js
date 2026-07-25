@@ -1017,9 +1017,10 @@ function renderTranscripts() {
       const uploadProgress = Number.isFinite(item.uploadProgress) ? Math.min(100, Math.max(0, item.uploadProgress)) : null;
       const isUploading = item.persisting || (uploadProgress !== null && uploadProgress < 100) || /正在保存到账号资料库/.test(item.progressText || "");
       const transcribeDisabled = !isMedia || isUploading || isTranscribing || isAudioPreprocessing;
+      const fileKind = /\.(txt|md|csv|json)$/i.test(item.name) ? "DOC" : /\.(mp4|mov|mkv|webm)$/i.test(item.name) ? "VID" : "AUD";
       return `<tr>
         <td><input class="row-check" type="checkbox" data-index="${index}" ${item.selected ? "checked" : ""} aria-label="选择 ${escapeHTML(item.id)}" /></td>
-        <td><strong>${escapeHTML(item.id)} · ${escapeHTML(item.name)}</strong><small class="${fileSize > 24 * 1024 * 1024 && !item.text ? "large-file-note" : "file-size-note"}">${item.roleResult ? "已区分角色 · 可导出问答 Word" : item.text ? "已建立逐字稿" : fileSize > 24 * 1024 * 1024 ? `${formatFileSize(fileSize)} · 服务端提取音轨并自动分片` : `${formatFileSize(fileSize)} · 等待语音转录`}${item.persisted ? " · 已保存到账户" : item.localPersisted ? " · 已保存本机备份" : item.persisting ? " · 保存中" : ""}</small><span class="source-badge ${item.source === "实时录音" ? "live" : ""}">${sourceLabel}</span>${item.error ? `<small class="file-error">失败原因：${escapeHTML(humanizeFileTransferError(item.error))}</small>` : ""}${item.persistError ? `<small class="file-error">保存提示：${escapeHTML(humanizeFileTransferError(item.persistError))}</small>` : ""}${item.localPersistError ? `<small class="file-error">本机备份提示：${escapeHTML(humanizeFileTransferError(item.localPersistError))}</small>` : ""}</td>
+        <td class="file-cell"><div class="file-record"><span class="file-kind">${fileKind}</span><div><strong>${escapeHTML(item.id)} · ${escapeHTML(item.name)}</strong><small class="${fileSize > 24 * 1024 * 1024 && !item.text ? "large-file-note" : "file-size-note"}">${item.roleResult ? "已区分角色 · 可导出问答 Word" : item.text ? "已建立逐字稿" : fileSize > 24 * 1024 * 1024 ? `${formatFileSize(fileSize)} · 服务端提取音轨并自动分片` : `${formatFileSize(fileSize)} · 等待语音转录`}${item.persisted ? " · 已保存到账户" : item.localPersisted ? " · 已保存本机备份" : item.persisting ? " · 保存中" : ""}</small><span class="source-badge ${item.source === "实时录音" ? "live" : ""}">${sourceLabel}</span>${item.error ? `<small class="file-error">失败原因：${escapeHTML(humanizeFileTransferError(item.error))}</small>` : ""}${item.persistError ? `<small class="file-error">保存提示：${escapeHTML(humanizeFileTransferError(item.persistError))}</small>` : ""}${item.localPersistError ? `<small class="file-error">本机备份提示：${escapeHTML(humanizeFileTransferError(item.localPersistError))}</small>` : ""}</div></div></td>
         <td><select class="type-select" data-index="${index}" aria-label="受访者类型"><option value="HCP" ${normalizeRespondentType(item.type) === "HCP" ? "selected" : ""}>HCP</option><option value="Patient" ${normalizeRespondentType(item.type) === "Patient" ? "selected" : ""}>Patient</option></select></td>
         <td>${escapeHTML(item.duration)}</td>
         <td><span class="status-pill ${statusClass}">${escapeHTML(item.status)}</span>${item.progressText ? `<small class="transcript-progress">${escapeHTML(item.progressText)}</small>` : ""}${uploadProgress !== null ? `<span class="upload-progress-bar" aria-label="上传保存进度 ${uploadProgress}%"><i style="width:${uploadProgress}%"></i></span>` : ""}</td>
@@ -1029,6 +1030,9 @@ function renderTranscripts() {
   }
   const transcribed = state.interviews.filter((item) => item.text).length;
   $("#fileSummary").textContent = `${state.interviews.length} 份访谈 · ${transcribed} 份可分析`;
+  $("#libraryTotal").textContent = state.interviews.length;
+  $("#libraryTranscribed").textContent = transcribed;
+  $("#libraryPending").textContent = Math.max(0, state.interviews.length - transcribed);
   $("#navCount").textContent = state.interviews.length;
   $("#masterCheck").checked = state.interviews.length > 0 && state.interviews.every((item) => item.selected);
   $$(".row-check").forEach((checkbox) => checkbox.addEventListener("change", () => { state.interviews[+checkbox.dataset.index].selected = checkbox.checked; renderReadiness(); renderRoleMapper(); }));
@@ -1898,7 +1902,6 @@ $("#goCollect").addEventListener("click", () => showView("transcripts"));
 $("#goAnalyze").addEventListener("click", () => showView("outline"));
 $("#newAnalysis").addEventListener("click", createProject);
 $("#uploadButton").addEventListener("click", () => $("#fileInput").click());
-$("#browseButton").addEventListener("click", (event) => { event.stopPropagation(); $("#fileInput").click(); });
 $("#uploadZone").addEventListener("click", (event) => { if (!event.target.closest("button")) $("#fileInput").click(); });
 $("#uploadZone").addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") $("#fileInput").click(); });
 $("#fileInput").addEventListener("change", (event) => addFiles([...event.target.files]));
