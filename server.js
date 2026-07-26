@@ -191,6 +191,103 @@ const synthesisSchema = {
   required: ["executive_summary", "sample_overview", "top_insights", "theme_matrix", "segments", "unmet_needs", "strategic_actions", "caveats"]
 };
 
+const deckScriptSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    title: { type: "string" },
+    subtitle: { type: "string" },
+    audience: { type: "string" },
+    narrative_arc: { type: "string" },
+    executive_summary: { type: "string" },
+    cross_scenario_insights: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          theme: { type: "string" },
+          finding: { type: "string" },
+          scenario_contrast: { type: "string" },
+          implication: { type: "string" },
+          evidence: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                document_id: { type: "string" },
+                quote: { type: "string" }
+              },
+              required: ["document_id", "quote"]
+            }
+          }
+        },
+        required: ["theme", "finding", "scenario_contrast", "implication", "evidence"]
+      }
+    },
+    strategic_priorities: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          title: { type: "string" },
+          rationale: { type: "string" },
+          action: { type: "string" }
+        },
+        required: ["title", "rationale", "action"]
+      }
+    },
+    slides: {
+      type: "array",
+      minItems: 8,
+      maxItems: 18,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          title: { type: "string" },
+          takeaway: { type: "string" },
+          layout: { type: "string", enum: ["封面", "执行摘要", "场景对比", "洞察证据", "旅程地图", "策略框架", "行动路线图", "研究边界"] },
+          method: { type: "string" },
+          content: {
+            type: "array",
+            minItems: 0,
+            maxItems: 4,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                heading: { type: "string" },
+                body: { type: "string" }
+              },
+              required: ["heading", "body"]
+            }
+          },
+          evidence: {
+            type: "array",
+            maxItems: 3,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                document_id: { type: "string" },
+                quote: { type: "string" }
+              },
+              required: ["document_id", "quote"]
+            }
+          },
+          visual_note: { type: "string" }
+        },
+        required: ["title", "takeaway", "layout", "method", "content", "evidence", "visual_note"]
+      }
+    },
+    caveats: { type: "array", items: { type: "string" } }
+  },
+  required: ["title", "subtitle", "audience", "narrative_arc", "executive_summary", "cross_scenario_insights", "strategic_priorities", "slides", "caveats"]
+};
+
 const roleAssignmentSchema = {
   type: "object",
   additionalProperties: false,
@@ -286,6 +383,85 @@ async function synthesize(projectName, outline, analyses) {
     ],
     text: { format: { type: "json_schema", name: "cross_interview_synthesis", strict: true, schema: synthesisSchema } }
   }, "跨样本洞察综合");
+  return safeJsonParse(extractResponseText(response));
+}
+
+function deckGuidePacket(guide = {}, index = 0) {
+  const questions = Array.isArray(guide.questions) ? guide.questions : [];
+  const matrix = Array.isArray(guide.matrix) ? guide.matrix : [];
+  const report = guide.report && typeof guide.report === "object" ? guide.report : {};
+  return {
+    scenario_id: `DG-${String(index + 1).padStart(2, "0")}`,
+    scenario_name: String(guide.title || `访谈场景 ${index + 1}`).trim().slice(0, 120),
+    discussion_guide_summary: String(guide.outlineText || "").trim().slice(0, 12_000),
+    questions: questions.slice(0, 80).map((question) => String(question?.question || question || "").trim().slice(0, 260)),
+    sample_count: matrix.length,
+    report: {
+      executive_summary: String(report.executive_summary || "").slice(0, 4_000),
+      sample_overview: String(report.sample_overview || "").slice(0, 2_000),
+      top_insights: (report.top_insights || []).slice(0, 12).map((insight) => ({
+        title: String(insight.title || "").slice(0, 220),
+        insight: String(insight.insight || "").slice(0, 1_200),
+        implication: String(insight.implication || "").slice(0, 900),
+        prevalence: Number(insight.prevalence || 0),
+        confidence: Number(insight.confidence || 0),
+        evidence: (insight.evidence || []).slice(0, 4).map((evidence) => ({
+          document_id: String(evidence.document_id || "").slice(0, 100),
+          quote: String(evidence.quote || "").slice(0, 500)
+        }))
+      })),
+      segments: (report.segments || []).slice(0, 8),
+      unmet_needs: (report.unmet_needs || []).slice(0, 12),
+      strategic_actions: (report.strategic_actions || []).slice(0, 12),
+      caveats: (report.caveats || []).slice(0, 8)
+    },
+    respondent_evidence_matrix: matrix.slice(0, 10).map((row) => ({
+      document_id: String(row.document_id || row.id || "").slice(0, 100),
+      respondent_type: String(row.type || "受访者").slice(0, 40),
+      answers: (row.answers || []).slice(0, 60).map((answer, answerIndex) => ({
+        question_id: String(answer?.question_id || `Q${answerIndex + 1}`).slice(0, 40),
+        coverage: String(answer?.coverage || "未覆盖").slice(0, 20),
+        answer: String(answer?.answer || answer || "").slice(0, 320),
+        quote: String(answer?.quotes?.[0]?.quote || "").slice(0, 220)
+      }))
+    }))
+  };
+}
+
+async function generateDeckScript(projectName, guides, instructions = "") {
+  const packets = guides.slice(0, 4).map(deckGuidePacket);
+  const sampleCount = packets.reduce((total, guide) => total + guide.sample_count, 0);
+  const response = await openAIResponses({
+    model: SYNTHESIS_MODEL,
+    reasoning: { effort: "medium" },
+    input: [
+      {
+        role: "system",
+        content: `你是资深医药定性研究负责人兼市场策略顾问。请把多个访谈场景的研究大纲、样本逐题矩阵与证据综合为面向市场部决策的幻灯片文字稿。
+
+必须遵守：
+1. 两份或多份 Discussion Guide 是不同研究场景，既要分别呈现，也要进行跨场景比较；不得把不同样本池混为同一人群。
+2. 只使用输入中的研究结果和受访原话，不发明数据、事实或引用；少数观点不得写成共识。
+3. 每页只承担一个叙事任务，标题优先使用可直接说出口的结论句，而不是呆板章节名。
+4. 叙事从研究问题与场景开始，经行为路径、关键张力、场景差异和机会判断，最终落到市场策略优先级与可验证行动。
+5. 每页必须给出标题、核心结论、内容块、推荐方法学、版式建议和可追溯证据。封面页保持极简。
+6. 建议 10–16 页；正文密度适合 16:9 管理层汇报，不要把长报告原文直接塞进幻灯片。
+7. 策略建议要明确说明其证据基础、适用场景和验证方式；所有结论需由研究、医学与合规人员复核。
+8. 输出简体中文。`
+      },
+      {
+        role: "user",
+        content: `研究项目：${String(projectName || "未命名研究项目").slice(0, 160)}
+目标受众：品牌市场部、医学与研究负责人
+样本总数：${sampleCount}
+研究者补充要求：${String(instructions || "突出首购与复购场景的关键差异，以患者行为路径、决策驱动与阻碍为主线，输出可以验证的市场策略优先级。").slice(0, 3_000)}
+
+分场景研究资料：
+${JSON.stringify(packets)}`
+      }
+    ],
+    text: { format: { type: "json_schema", name: "cross_scenario_deck_script", strict: true, schema: deckScriptSchema } }
+  }, "跨场景洞察 Deck 文字稿");
   return safeJsonParse(extractResponseText(response));
 }
 
@@ -632,6 +808,9 @@ async function handleExport(req, res, kind) {
     if (!Array.isArray(payload.documents) || !payload.documents.length) throw new Error("请先完成至少一份访谈的角色区分");
     return binary(res, 200, await buildRoleTranscriptDocx(payload), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "MedVoice-role-labeled-transcript.docx");
   }
+  if (kind === "pptx" && Array.isArray(payload.deckScript?.slides) && payload.deckScript.slides.length) {
+    return binary(res, 200, await buildInsightDeck(payload), "application/vnd.openxmlformats-officedocument.presentationml.presentation", "MedVoice-insight-strategy-deck.pptx");
+  }
   if (!payload.report && kind !== "xlsx") throw new Error("请先完成大纲驱动分析，再导出报告");
   if (!Array.isArray(payload.questions) || !payload.questions.length) throw new Error("没有可导出的大纲问题");
   if (kind === "xlsx") return binary(res, 200, await buildMatrixWorkbook(payload), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "MedVoice-question-matrix.xlsx");
@@ -944,6 +1123,26 @@ async function handleAnalyze(req, res) {
     answers: analyses[index].outline_answers
   }));
   json(res, 200, { report, analyses, matrix, questions: payload.questions, models: { map: MAP_MODEL, synthesis: SYNTHESIS_MODEL } });
+}
+
+async function handleDeckScript(req, res) {
+  if (!API_KEY) return json(res, 503, { error: "尚未连接 AI 服务；请先完成 AI 服务配置。" });
+  const payload = await readJson(req, 25_000_000);
+  const guides = Array.isArray(payload.guides)
+    ? payload.guides.filter((guide) => guide?.report && Array.isArray(guide.matrix) && guide.matrix.length)
+    : [];
+  if (!guides.length) throw new Error("请先完成至少一个访谈场景的大纲驱动分析");
+  if (guides.length > 4) throw new Error("单次最多综合 4 个访谈场景");
+  const deckScript = await generateDeckScript(payload.projectName, guides, payload.instructions);
+  return json(res, 200, {
+    deckScript,
+    sourceSummary: {
+      guideCount: guides.length,
+      sampleCount: guides.reduce((total, guide) => total + guide.matrix.length, 0),
+      questionCount: guides.reduce((total, guide) => total + (guide.questions?.length || 0), 0)
+    },
+    model: SYNTHESIS_MODEL
+  });
 }
 
 
@@ -1747,6 +1946,7 @@ const server = http.createServer(async (req, res) => {
     const analysisJobMatch = url.pathname.match(/^\/api\/analyze\/jobs\/([^/]+)$/);
     if (req.method === "GET" && analysisJobMatch) return handleAnalysisJobStatus(req, res, analysisJobMatch[1]);
     if (req.method === "POST" && url.pathname === "/api/analyze") return await handleAnalyze(req, res);
+    if (req.method === "POST" && url.pathname === "/api/report/deck-script") return await handleDeckScript(req, res);
     if (req.method === "POST" && url.pathname === "/api/roles/identify") return await handleIdentifyRoles(req, res);
     if (req.method === "POST" && url.pathname === "/api/settings") {
       if (AUTH_REQUIRED && req.user.role !== "admin") return json(res, 403, { error: "仅管理员可以配置临时 API Key" });

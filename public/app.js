@@ -4,6 +4,7 @@ import { trialUserIdentity } from "./user-identity.js?v=20260726.1";
 
 const DEFAULT_PROJECT_ID = "default";
 const DEFAULT_PROJECT_NAME = "未命名访谈项目";
+const DEFAULT_DECK_INSTRUCTIONS = "突出不同访谈场景的关键差异，以患者行为路径、决策驱动与阻碍为主线；优先呈现可被原话证据验证的结论，并将建议转译为市场部可执行、可验证的策略优先级。";
 
 const state = {
   projectName: DEFAULT_PROJECT_NAME,
@@ -22,6 +23,7 @@ const state = {
   analyses: [],
   matrix: [],
   report: null,
+  reportWorkspace: null,
   apiConfigured: false,
   apiKeySource: "none",
   authRequired: false,
@@ -118,6 +120,17 @@ function normalizedOutlineGuide(guide = {}, index = 0) {
   };
 }
 
+function normalizedReportWorkspace(workspace = {}) {
+  return {
+    deckScript: workspace?.deckScript && typeof workspace.deckScript === "object" ? workspace.deckScript : null,
+    instructions: String(workspace?.instructions || DEFAULT_DECK_INSTRUCTIONS).slice(0, 1200),
+    slideIndex: Math.max(0, Number(workspace?.slideIndex || 0)),
+    generatedAt: Number(workspace?.generatedAt || 0),
+    sourceFingerprint: String(workspace?.sourceFingerprint || ""),
+    sourceSummary: workspace?.sourceSummary && typeof workspace.sourceSummary === "object" ? workspace.sourceSummary : null
+  };
+}
+
 function blankOutlineGuide(index = state.outlineGuides.length) {
   return normalizedOutlineGuide({ id: createOutlineGuideId(), title: `访谈大纲 ${index + 1}`, createdAt: Date.now() }, index);
 }
@@ -169,7 +182,8 @@ function saveCurrentProjectWorkspace() {
     activeOutlineGuideId: state.activeOutlineGuideId,
     analyses: state.analyses,
     matrix: state.matrix,
-    report: state.report
+    report: state.report,
+    reportWorkspace: state.reportWorkspace
   }));
 }
 
@@ -194,6 +208,7 @@ function loadCurrentProjectWorkspace() {
     ? data.activeOutlineGuideId
     : state.outlineGuides[0].id;
   state.outlineUploadMode = "add";
+  state.reportWorkspace = normalizedReportWorkspace(data.reportWorkspace);
   applyOutlineGuideToState();
 }
 
@@ -2293,24 +2308,188 @@ function renderEvidenceLedger() {
   }));
 }
 
-function renderReport() {
+function reportReadyGuides() {
+  syncActiveOutlineGuideFromState();
+  return state.outlineGuides.filter((guide) => guide.report && Array.isArray(guide.matrix) && guide.matrix.length);
+}
+
+function reportSourceFingerprint(guides = reportReadyGuides()) {
+  return JSON.stringify(guides.map((guide) => ({
+    id: guide.id,
+    title: guide.title,
+    samples: guide.matrix.length,
+    questions: guide.questions.length,
+    summary: guide.report?.executive_summary || "",
+    insights: (guide.report?.top_insights || []).map((item) => item.title)
+  })));
+}
+
+function reportEvidenceMetrics(guides) {
+  const insights = guides.flatMap((guide) => guide.report?.top_insights || []);
+  const evidenceCount = insights.reduce((sum, insight) => sum + (insight.evidence?.length || 0), 0);
+  const confidence = insights.length ? Math.round(insights.reduce((sum, item) => sum + Number(item.confidence || 0), 0) / insights.length) : 0;
+  return {
+    guideCount: guides.length,
+    sampleCount: guides.reduce((sum, guide) => sum + guide.matrix.length, 0),
+    questionCount: guides.reduce((sum, guide) => sum + guide.questions.length, 0),
+    evidenceCount,
+    confidence
+  };
+}
+
+function comprehensiveReportPayload() {
+  return {
+    projectName: state.projectName,
+    instructions: state.reportWorkspace?.instructions || DEFAULT_DECK_INSTRUCTIONS,
+    guides: reportReadyGuides().map((guide) => ({
+      id: guide.id,
+      title: guide.title,
+      outlineText: guide.outlineText,
+      questions: guide.questions,
+      matrix: guide.matrix,
+      report: guide.report,
+      sampleIds: guide.sampleIds
+    }))
+  };
+}
+
+function renderReportSources(guides, metrics) {
+  $("#reportSourceSummary").innerHTML = [
+    [metrics.guideCount, "研究场景"],
+    [metrics.sampleCount, "受访样本"],
+    [metrics.questionCount, "大纲问题"]
+  ].map(([value, label]) => `<span><b>${value}</b><small>${label}</small></span>`).join("");
+  $("#reportSourceCards").innerHTML = guides.length
+    ? guides.map((guide, index) => `<article class="report-source-card"><span>DG${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHTML(guide.title)}</strong><small>${guide.matrix.length} 份样本 · ${guide.questions.length} 个问题 · ${(guide.report?.top_insights || []).length} 条洞察</small></div></article>`).join("")
+    : '<div class="report-empty-state" style="min-width:100%;min-height:80px"><div><strong>暂无可综合的研究场景</strong><span>请先在“大纲驱动 · 并发分析”中完成至少一份访谈大纲的样本分析。</span></div></div>';
+}
+
+function renderReportToc(sections, metrics, stale) {
+  $("#reportDynamicToc").innerHTML = `<strong>报告导航</strong>${sections.map((section, index) => `<a href="#${section.id}" class="${index === 0 ? "active" : ""}">${String(index + 1).padStart(2, "0")} ${escapeHTML(section.label)}</a>`).join("")}<div><span>综合报告可信度</span><strong>${metrics.confidence ? `${metrics.confidence}%` : "—"}</strong><small>${metrics.evidenceCount} 条证据 · ${stale ? "研究输入已更新，建议重生成" : "AI 草案待人工复核"}</small></div>`;
+}
+
+function renderCombinedA4Report(guides, metrics, script, stale) {
   const paper = $("#reportPaper");
-  const enabled = Boolean(state.report);
-  ["#copyReport", "#exportWord", "#exportPpt"].forEach((selector) => { $(selector).disabled = !enabled; });
-  if (!state.report) {
-    paper.innerHTML = '<div class="empty-dashboard" style="min-height:700px"><div><strong>报告尚未生成</strong>报告将基于大纲逐题分析矩阵，自动形成结论、证据、影响与建议。</div></div>';
-    $("#reportConfidence").textContent = "—";
-    $("#reportConfidenceBar").style.width = "0";
-    $("#reportEvidenceCount").textContent = "等待分析证据";
+  const scenarioNames = guides.map((guide) => guide.title);
+  if (!guides.length) {
+    paper.innerHTML = '<div class="report-empty-state"><div><strong>洞察报告尚未形成</strong><span>当访谈大纲完成并发分析后，这里会综合多个研究场景、受访样本和原话证据。</span></div></div>';
+    $("#reportDynamicToc").innerHTML = "";
     return;
   }
-  const report = state.report;
-  const evidenceCount = report.top_insights.reduce((sum, insight) => sum + (insight.evidence?.length || 0), 0);
-  const confidence = report.top_insights.length ? Math.round(report.top_insights.reduce((sum, item) => sum + item.confidence, 0) / report.top_insights.length) : 0;
-  $("#reportConfidence").textContent = `${confidence}%`;
-  $("#reportConfidenceBar").style.width = `${confidence}%`;
-  $("#reportEvidenceCount").textContent = `基于 ${state.matrix.length} 份访谈、${evidenceCount} 条证据`;
-  paper.innerHTML = `<div class="report-cover"><small>QUALITATIVE INSIGHT REPORT · AI DRAFT</small><h1>${escapeHTML(state.projectName)}<br>HCP 深度访谈洞察报告</h1><p>MedVoice Insight 自动生成草案 · 待研究负责人复核</p></div><section class="report-section"><span>01 / EXECUTIVE SUMMARY</span><h2>执行摘要</h2><p>${escapeHTML(report.executive_summary)}</p></section><section class="report-section"><span>02 / CORE INSIGHTS</span><h2>核心洞察</h2>${report.top_insights.map((insight, index) => `<div class="report-insight"><h3>${String(index + 1).padStart(2, "0")} · ${escapeHTML(insight.title)}</h3><p>${escapeHTML(insight.insight)}</p>${insight.evidence?.[0] ? `<blockquote>“${escapeHTML(insight.evidence[0].quote)}” — ${escapeHTML(insight.evidence[0].document_id)}</blockquote>` : ""}<p><strong>策略影响：</strong>${escapeHTML(insight.implication)}</p></div>`).join("")}</section><section class="report-section"><span>03 / UNMET NEEDS</span><h2>未满足需求</h2><ol class="report-actions">${(report.unmet_needs || []).map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ol></section><section class="report-section"><span>04 / STRATEGIC ACTIONS</span><h2>建议的下一步行动</h2><ol class="report-actions">${(report.strategic_actions || []).map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ol></section><section class="report-section"><span>05 / RESEARCH CAVEATS</span><h2>研究边界</h2><ol class="report-actions">${(report.caveats || []).map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ol></section>`;
+  const sections = [];
+  if (script) {
+    sections.push({ id: "report-executive", label: "执行摘要" }, { id: "report-cross", label: "跨场景洞察" }, { id: "report-strategy", label: "策略优先级" }, { id: "report-boundaries", label: "研究边界" });
+    paper.innerHTML = `<div class="report-cover"><small>QUALITATIVE INSIGHT REPORT · HUMAN REVIEW REQUIRED</small><h1>${escapeHTML(script.title || state.projectName)}</h1><p>${escapeHTML(script.subtitle || "多访谈场景的证据驱动策略综合")}</p><div class="report-scenario-line">${scenarioNames.map((name) => `<span>${escapeHTML(name)}</span>`).join("")}</div></div>
+      <section class="report-section" id="report-executive"><span>01 / EXECUTIVE SUMMARY</span><h2>执行摘要</h2><p>${escapeHTML(script.executive_summary || "文字稿已生成，等待研究负责人复核。")}</p></section>
+      <section class="report-section" id="report-cross"><span>02 / CROSS-SCENARIO INSIGHTS</span><h2>跨场景核心洞察</h2>${(script.cross_scenario_insights || []).map((insight, index) => `<article class="report-cross-insight"><h3>${String(index + 1).padStart(2, "0")} · ${escapeHTML(insight.theme)}</h3><p>${escapeHTML(insight.finding)}</p>${insight.scenario_contrast ? `<p class="report-contrast"><strong>场景差异：</strong>${escapeHTML(insight.scenario_contrast)}</p>` : ""}<p><strong>策略影响：</strong>${escapeHTML(insight.implication)}</p><div class="report-evidence-list">${(insight.evidence || []).map((evidence) => `<blockquote>“${escapeHTML(evidence.quote)}” — ${escapeHTML(evidence.document_id)}</blockquote>`).join("")}</div></article>`).join("")}</section>
+      <section class="report-section" id="report-strategy"><span>03 / STRATEGIC PRIORITIES</span><h2>市场策略优先级</h2><div class="report-strategy-list">${(script.strategic_priorities || []).map((priority) => `<article><div><h3>${escapeHTML(priority.title)}</h3><p>${escapeHTML(priority.rationale)}</p><p><strong>建议行动：</strong>${escapeHTML(priority.action)}</p></div></article>`).join("")}</div></section>
+      <section class="report-section" id="report-boundaries"><span>04 / RESEARCH BOUNDARIES</span><h2>研究边界与人工复核</h2><ol class="report-actions">${(script.caveats || []).map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ol>${stale ? '<div class="report-highlight"><strong>研究输入已更新</strong><p>当前报告文字稿仍可浏览，但建议点击“生成综合文字稿”以同步最新样本和分析。</p></div>' : ""}</section>`;
+  } else {
+    sections.push({ id: "report-context", label: "研究场景" }, { id: "report-findings", label: "分场景发现" }, { id: "report-next", label: "综合下一步" });
+    paper.innerHTML = `<div class="report-cover"><small>QUALITATIVE INSIGHT REPORT · EVIDENCE INPUTS READY</small><h1>${escapeHTML(state.projectName)}<br>综合洞察报告</h1><p>已汇集 ${metrics.guideCount} 个研究场景与 ${metrics.sampleCount} 份受访样本，等待生成跨场景文字稿。</p><div class="report-scenario-line">${scenarioNames.map((name) => `<span>${escapeHTML(name)}</span>`).join("")}</div></div>
+      <section class="report-section" id="report-context"><span>01 / RESEARCH CONTEXT</span><h2>研究场景与样本</h2><p>各访谈大纲作为独立研究场景，与其绑定样本分别完成大纲逐题分析；综合报告将在保持样本边界的前提下比较场景差异。</p></section>
+      <section class="report-section" id="report-findings"><span>02 / SCENARIO FINDINGS</span><h2>分场景已验证发现</h2>${guides.map((guide, index) => `<div class="report-insight"><h3>DG${String(index + 1).padStart(2, "0")} · ${escapeHTML(guide.title)}</h3><p>${escapeHTML(guide.report.executive_summary || "")}</p>${(guide.report.top_insights || []).slice(0, 2).map((insight) => `<blockquote>${escapeHTML(insight.title)} · ${escapeHTML(insight.implication || "")}</blockquote>`).join("")}</div>`).join("")}</section>
+      <section class="report-section" id="report-next"><span>03 / NEXT STEP</span><h2>生成综合文字稿</h2><div class="report-highlight"><strong>先审阅文字稿，再生成 PPTX</strong><p>系统会把场景差异、行为路径、原话证据与策略优先级整理为 10–16 页的 16:9 幻灯片结构。</p></div></section>`;
+  }
+  renderReportToc(sections, metrics, stale);
+}
+
+function renderDeckManuscript(script, stale) {
+  const container = $("#deckScriptContainer");
+  const status = $("#deckScriptStatus");
+  if (!script?.slides?.length) {
+    status.textContent = "等待生成";
+    status.classList.remove("stale");
+    container.innerHTML = '<div class="report-empty-state"><div><strong>先生成可审阅的幻灯片文字稿</strong><span>每页会明确标题、核心结论、内容结构、方法学、推荐版式及可追溯原话证据。</span></div></div>';
+    return;
+  }
+  status.textContent = stale ? `共 ${script.slides.length} 页 · 输入已更新` : `共 ${script.slides.length} 页 · 可生成 Deck`;
+  status.classList.toggle("stale", stale);
+  container.innerHTML = script.slides.map((slide, index) => `<article class="deck-script-slide">
+    <div class="deck-script-number">${String(index + 1).padStart(2, "0")}</div>
+    <div class="deck-script-main"><h3>${escapeHTML(slide.title)}</h3><p>${escapeHTML(slide.takeaway)}</p><div class="deck-script-blocks">${(slide.content || []).map((block) => `<article><strong>${escapeHTML(block.heading)}</strong><p>${escapeHTML(block.body)}</p></article>`).join("")}</div></div>
+    <aside class="deck-script-notes"><span>LAYOUT / METHOD</span><strong>${escapeHTML(slide.layout)} · ${escapeHTML(slide.method)}</strong><span>版式建议</span><small>${escapeHTML(slide.visual_note)}</small><span style="margin-top:12px">证据索引</span>${(slide.evidence || []).length ? (slide.evidence || []).map((item) => `<small>${escapeHTML(item.document_id)} · “${escapeHTML(item.quote)}”</small>`).join("") : "<small>本页无指定逐字引文，需人工复核。</small>"}</aside>
+  </article>`).join("");
+}
+
+function renderDeckPreview(script) {
+  const slides = script?.slides || [];
+  const workspace = state.reportWorkspace;
+  workspace.slideIndex = Math.min(Math.max(0, workspace.slideIndex), Math.max(0, slides.length - 1));
+  $("#deckPreviewCounter").textContent = slides.length ? `${workspace.slideIndex + 1} / ${slides.length}` : "0 / 0";
+  $("#deckPreviewPrev").disabled = !slides.length || workspace.slideIndex === 0;
+  $("#deckPreviewNext").disabled = !slides.length || workspace.slideIndex === slides.length - 1;
+  $("#deckPreviewTrack").innerHTML = slides.length
+    ? slides.map((slide, index) => `<article class="deck-preview-slide ${index === 0 || slide.layout === "封面" ? "cover" : ""}"><small>${String(index + 1).padStart(2, "0")} · ${escapeHTML(slide.layout || "INSIGHT")}</small><h3>${escapeHTML(slide.title)}</h3><p>${escapeHTML(slide.takeaway)}</p><div class="deck-preview-content">${(slide.content || []).slice(0, 4).map((block) => `<article><strong>${escapeHTML(block.heading)}</strong><p>${escapeHTML(block.body)}</p></article>`).join("")}</div></article>`).join("")
+    : '<div class="report-empty-state" style="flex:0 0 100%"><div><strong>暂无 Deck 预览</strong><span>生成文字稿后，这里将逐页显示 16:9 幻灯片。</span></div></div>';
+  requestAnimationFrame(() => {
+    const track = $("#deckPreviewTrack");
+    track.scrollTo({ left: track.clientWidth * workspace.slideIndex, behavior: "instant" });
+  });
+}
+
+function renderReport() {
+  state.reportWorkspace ||= normalizedReportWorkspace();
+  const guides = reportReadyGuides();
+  const metrics = reportEvidenceMetrics(guides);
+  const workspace = state.reportWorkspace;
+  const fingerprint = reportSourceFingerprint(guides);
+  const stale = Boolean(workspace.deckScript && workspace.sourceFingerprint && workspace.sourceFingerprint !== fingerprint);
+  const script = workspace.deckScript;
+  renderReportSources(guides, metrics);
+  renderCombinedA4Report(guides, metrics, script, stale);
+  renderDeckManuscript(script, stale);
+  renderDeckPreview(script);
+  $("#deckInstructions").value = workspace.instructions || DEFAULT_DECK_INSTRUCTIONS;
+  $("#generateDeckScript").disabled = !guides.length;
+  $("#refreshDeckScript").disabled = !guides.length;
+  $("#copyReport").disabled = !guides.length;
+  $("#exportWord").disabled = !state.report;
+  $("#exportPpt").disabled = !script?.slides?.length;
+}
+
+async function generateComprehensiveDeckScript() {
+  const payload = comprehensiveReportPayload();
+  if (!payload.guides.length) return toast("请先完成至少一个访谈场景的并发分析");
+  const health = await checkHealth();
+  if (!health) return toast("请先启动 MedVoice 服务");
+  if (!state.apiConfigured) return openApiSettings(generateComprehensiveDeckScript);
+  const buttons = [$("#generateDeckScript"), $("#refreshDeckScript")];
+  buttons.forEach((button) => { button.disabled = true; button.dataset.label = button.textContent; button.textContent = "正在综合研究证据…"; });
+  try {
+    const response = await fetch(`${API_BASE}/api/report/deck-script`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "综合文字稿生成失败");
+    state.reportWorkspace = normalizedReportWorkspace({
+      ...state.reportWorkspace,
+      deckScript: data.deckScript,
+      instructions: payload.instructions,
+      slideIndex: 0,
+      generatedAt: Date.now(),
+      sourceFingerprint: reportSourceFingerprint(payload.guides),
+      sourceSummary: data.sourceSummary
+    });
+    saveCurrentProjectWorkspace();
+    renderReport();
+    toast(`综合文字稿已生成：${data.deckScript?.slides?.length || 0} 页，可审阅后生成 PPTX`);
+  } catch (error) {
+    toast(error.message.includes("fetch") ? "请先启动 MedVoice 服务" : error.message);
+  } finally {
+    buttons.forEach((button) => { button.textContent = button.dataset.label || "生成综合文字稿"; });
+    renderReport();
+  }
+}
+
+function changeDeckPreview(direction) {
+  const count = state.reportWorkspace?.deckScript?.slides?.length || 0;
+  if (!count) return;
+  state.reportWorkspace.slideIndex = Math.max(0, Math.min(count - 1, state.reportWorkspace.slideIndex + direction));
+  saveCurrentProjectWorkspace();
+  renderDeckPreview(state.reportWorkspace.deckScript);
 }
 
 function openEvidence(index) {
@@ -2423,7 +2602,20 @@ async function runAnalysis() {
   }
 }
 
-function exportPayload() {
+function exportPayload(kind = "") {
+  if (kind === "pptx" && state.reportWorkspace?.deckScript?.slides?.length) {
+    return {
+      projectName: state.projectName,
+      deckScript: state.reportWorkspace.deckScript,
+      guides: reportReadyGuides().map((guide) => ({
+        id: guide.id,
+        title: guide.title,
+        questions: guide.questions,
+        matrix: guide.matrix,
+        report: guide.report
+      }))
+    };
+  }
   const guide = activeOutlineGuide();
   return { projectName: `${state.projectName} · ${guide?.title || "访谈大纲"}`, questions: state.questions, matrix: state.matrix, report: state.report };
 }
@@ -2432,7 +2624,7 @@ async function downloadExport(kind) {
   const labels = { xlsx: "Excel 矩阵", docx: "Word 报告", pptx: "PPT Deck" };
   toast(`正在生成${labels[kind]}…`);
   try {
-    const response = await fetch(`${API_BASE}/api/export/${kind}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(exportPayload()) });
+    const response = await fetch(`${API_BASE}/api/export/${kind}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(exportPayload(kind)) });
     if (!response.ok) {
       const data = await response.json();
       throw new Error(data.error || "导出失败");
@@ -2699,6 +2891,15 @@ $("#runOutlineAnalysis").addEventListener("click", runAnalysis);
 $("#exportExcel").addEventListener("click", () => downloadExport("xlsx"));
 $("#exportWord").addEventListener("click", () => downloadExport("docx"));
 $("#exportPpt").addEventListener("click", () => downloadExport("pptx"));
+$("#generateDeckScript").addEventListener("click", generateComprehensiveDeckScript);
+$("#refreshDeckScript").addEventListener("click", generateComprehensiveDeckScript);
+$("#deckInstructions").addEventListener("input", (event) => {
+  state.reportWorkspace ||= normalizedReportWorkspace();
+  state.reportWorkspace.instructions = event.target.value.slice(0, 1200);
+  saveCurrentProjectWorkspace();
+});
+$("#deckPreviewPrev").addEventListener("click", () => changeDeckPreview(-1));
+$("#deckPreviewNext").addEventListener("click", () => changeDeckPreview(1));
 $("#evidenceQuestionSearch").addEventListener("input", (event) => {
   state.evidenceSearch = event.target.value;
   renderEvidenceLedger();

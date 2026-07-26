@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" href="assets/medvoice-logo-v4.webp" as="image" type="image/webp" fetchpriority="high" />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=20260726.11" />
+    <link rel="stylesheet" href="style.css?v=20260727.1" />
   </head>
   <body>
     <div class="app-shell">
@@ -258,14 +258,49 @@
         </section>
 
         <section class="view" id="report-view">
-          <div class="section-title report-title">
-            <div><div class="eyebrow">AI-GENERATED · HUMAN-REVIEWED</div><h1>结构化洞察报告</h1><p>结论、证据、影响与建议四层联动，可直接进入研究交付。</p></div>
-            <div><button class="secondary-button" id="copyReport" disabled>复制全文</button><button class="secondary-button" id="exportWord" disabled>导出 Word ↗</button><button class="primary-button" id="exportPpt" disabled>一键生成 PPT Deck ✦</button></div>
+          <div class="section-title report-title report-hero">
+            <div><div class="eyebrow">EVIDENCE-LED STRATEGY DELIVERABLE</div><h1>综合洞察与策略 Deck</h1><p>以多份访谈大纲为研究场景，以对应样本与原话证据为基石，将洞察转译为可执行的市场策略。</p></div>
+            <button class="primary-button report-generate-button" id="generateDeckScript" disabled><span>✦</span>生成综合文字稿</button>
           </div>
-          <div class="report-layout">
-            <aside class="report-toc"><strong>报告目录</strong><button class="active">01 执行摘要</button><button>02 样本说明</button><button>03 核心洞察</button><button>04 未满足需求</button><button>05 受访者分群</button><button>06 策略建议</button><div><span>报告可信度</span><strong id="reportConfidence">—</strong><i><b id="reportConfidenceBar" style="width:0"></b></i><small id="reportEvidenceCount">等待分析证据</small></div></aside>
-            <article class="report-paper" id="reportPaper"></article>
-          </div>
+
+          <section class="report-source-panel panel">
+            <div><div class="eyebrow">RESEARCH INPUTS</div><h2>跨场景研究基座</h2><p>仅纳入已完成并发分析的访谈大纲及其绑定样本；各场景独立分析，再进行跨场景综合。</p></div>
+            <div class="report-source-summary" id="reportSourceSummary"></div>
+            <div class="report-source-cards" id="reportSourceCards"></div>
+          </section>
+
+          <section class="delivery-module report-a4-module">
+            <div class="delivery-module-head">
+              <div><div class="eyebrow">COMPREHENSIVE INSIGHT REPORT</div><h2>研究洞察报告</h2><p>面向研究复核的 A4 内容视图，串联执行摘要、跨场景洞察、证据和策略优先级。</p></div>
+              <div><button class="secondary-button" id="copyReport" disabled>复制全文</button><button class="secondary-button" id="exportWord" disabled>导出当前场景 Word ↗</button></div>
+            </div>
+            <div class="report-a4-stage">
+              <aside class="report-dynamic-toc" id="reportDynamicToc"></aside>
+              <div class="report-a4-viewport"><article class="report-paper" id="reportPaper"></article></div>
+            </div>
+          </section>
+
+          <section class="delivery-module manuscript-module">
+            <div class="delivery-module-head">
+              <div><div class="eyebrow">01 · SLIDE MANUSCRIPT</div><h2>文字稿版幻灯片内容</h2><p>先审阅每页标题、核心结论、内容结构、方法学与版式建议，再进入 PPTX 生成。</p></div>
+              <div class="deck-status" id="deckScriptStatus">等待生成</div>
+            </div>
+            <div class="deck-script-scroll" id="deckScriptContainer"></div>
+          </section>
+
+          <section class="delivery-module deck-builder-module">
+            <div class="delivery-module-head">
+              <div><div class="eyebrow">02 · POWERPOINT DECK</div><h2>Deck 生成与 16:9 预览</h2><p>下方预览与下载文件均由同一份文字稿驱动，避免策略结论在交付环节发生漂移。</p></div>
+              <button class="primary-button" id="exportPpt" disabled><span>↓</span>生成并下载 PPTX</button>
+            </div>
+            <div class="deck-instruction-panel">
+              <label for="deckInstructions"><span>研究者补充要求</span><small>可根据经验补充报告关注重点、结构或需要谨慎处理的判断。</small></label>
+              <textarea id="deckInstructions" maxlength="1200" rows="4"></textarea>
+              <button class="secondary-button" id="refreshDeckScript" disabled>按补充要求更新文字稿</button>
+            </div>
+            <div class="deck-preview-head"><div><span>16:9 SLIDE PREVIEW</span><strong id="deckPreviewCounter">0 / 0</strong></div><div><button class="icon-button" id="deckPreviewPrev" aria-label="上一页" disabled>←</button><button class="icon-button" id="deckPreviewNext" aria-label="下一页" disabled>→</button></div></div>
+            <div class="deck-preview-shell"><div class="deck-preview-track" id="deckPreviewTrack"></div></div>
+          </section>
         </section>
 
         <footer><span>MedVoice Insight Prototype · 仅用于研究洞察，不构成医学诊断或治疗建议</span><span>所有 AI 结论应由研究、医学与合规人员复核</span></footer>
@@ -321,6 +356,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="app.js?v=20260726.10"></script>
+    <script type="module" src="app.js?v=20260727.1"></script>
   </body>
 </html>
