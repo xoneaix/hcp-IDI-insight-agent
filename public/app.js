@@ -469,6 +469,7 @@ function showView(view, options = {}) {
   try { localStorage.setItem(VIEW_STORAGE_KEY, view); } catch {}
   if (options.updateHash !== false && location.hash !== `#${view}`) history.replaceState(null, "", `#${view}`);
   if (options.scroll !== false) window.scrollTo({ top: 0, behavior: "smooth" });
+  if (view === "matrix") requestAnimationFrame(updateMatrixScrollState);
 }
 
 async function checkHealth() {
@@ -2105,13 +2106,42 @@ function renderSignals() {
   }).join("");
 }
 
+function renderMatrixGuideSwitcher() {
+  const container = $("#matrixGuideTabs");
+  if (!container) return;
+  const active = activeOutlineGuide();
+  container.innerHTML = state.outlineGuides.map((guide, index) => {
+    const questions = guide.id === active?.id ? state.questions : guide.questions || [];
+    const matrix = guide.id === active?.id ? state.matrix : guide.matrix || [];
+    const isActive = guide.id === active?.id;
+    return `<button class="matrix-guide-tab ${isActive ? "active" : ""}" type="button" data-matrix-guide="${escapeHTML(guide.id)}" aria-pressed="${isActive}">
+      <span>${String(index + 1).padStart(2, "0")}</span>
+      <span><strong>${escapeHTML(guide.title)}</strong><small>${questions.length} 题 · ${matrix.length} 样本</small></span>
+      <em>${matrix.length ? "已分析" : questions.length ? "待分析" : "待上传"}</em>
+    </button>`;
+  }).join("");
+  $$("[data-matrix-guide]", container).forEach((button) => button.addEventListener("click", () => switchOutlineGuide(button.dataset.matrixGuide)));
+}
+
+function updateMatrixScrollState() {
+  const wrap = $("#matrixTableWrap");
+  const hint = $("#matrixScrollHint");
+  if (!wrap || !hint) return;
+  const overflow = wrap.scrollWidth - wrap.clientWidth > 12;
+  const reachedEnd = wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 18;
+  hint.hidden = !overflow || reachedEnd;
+  $(".matrix-panel")?.classList.toggle("scrollable", overflow);
+}
+
 function renderMatrix() {
   const table = $("#matrixTable");
+  renderMatrixGuideSwitcher();
   if (!state.questions.length) {
     $("#exportExcel").disabled = true;
     table.innerHTML = '<tbody><tr><td class="empty-row">请先在“大纲驱动·并发分析”中导入研究大纲。</td></tr></tbody>';
     renderGaps();
     renderEvidenceLedger();
+    requestAnimationFrame(updateMatrixScrollState);
     return;
   }
   const headers = state.questions.map((question, index) => `<th class="question-header">Q${index + 1}<br>${escapeHTML(question)}</th>`).join("");
@@ -2120,6 +2150,7 @@ function renderMatrix() {
     table.innerHTML = `<thead><tr><th>受访者 / 样本</th>${headers}</tr></thead><tbody><tr><td colspan="${state.questions.length + 1}" class="empty-row">大纲框架已建立。完成并发分析后生成逐题矩阵。</td></tr></tbody>`;
     renderGaps();
     renderEvidenceLedger();
+    requestAnimationFrame(updateMatrixScrollState);
     return;
   }
   table.innerHTML = `<thead><tr><th>受访者 / 样本</th>${headers}</tr></thead><tbody>${state.matrix.map((row, rowIndex) => `<tr><td><strong>${escapeHTML(row.document_id)}</strong><small>${escapeHTML(row.name || row.type)}</small></td>${state.questions.map((_, questionIndex) => {
@@ -2131,6 +2162,7 @@ function renderMatrix() {
   $("#exportExcel").disabled = false;
   renderGaps();
   renderEvidenceLedger();
+  requestAnimationFrame(updateMatrixScrollState);
 }
 
 function renderGaps() {
@@ -2141,7 +2173,7 @@ function renderGaps() {
   }
   const gaps = state.questions.map((question, index) => {
     const missingRows = state.matrix.map((row, rowIndex) => ({ row, rowIndex })).filter(({ row }) => row.answers?.[index]?.coverage === "未覆盖");
-    return { question, index, missingRows, covered: state.matrix.length - missingRows.length };
+    return { question, index, missingRows };
   }).filter((item) => item.missingRows.length).sort((a, b) => b.missingRows.length - a.missingRows.length).slice(0, 8);
   container.innerHTML = gaps.length ? gaps.map((item) => {
     const expanded = state.expandedGapQuestionIndex === item.index;
@@ -2149,7 +2181,7 @@ function renderGaps() {
       <button class="gap-item-main" type="button" data-gap-question="${item.index}" aria-expanded="${expanded}">
         <span class="gap-question-code">Q${String(item.index + 1).padStart(2, "0")}</span>
         <span class="gap-question-copy"><strong>${escapeHTML(item.question)}</strong><small>${item.missingRows.length} 份样本尚未覆盖，建议补访或回看追问段落。</small></span>
-        <span class="gap-coverage-score"><strong>${item.covered}/${state.matrix.length}</strong><small>已覆盖</small><em>${item.missingRows.length} 待补访</em></span>
+        <span class="gap-coverage-score"><strong>${item.missingRows.length}/${state.matrix.length}</strong><small>未覆盖</small><em>查看编号</em></span>
         <span class="gap-chevron" aria-hidden="true">⌄</span>
       </button>
       <div class="gap-missing-samples" ${expanded ? "" : "hidden"}>
@@ -2614,6 +2646,11 @@ $("#evidenceQuestionSearch").addEventListener("input", (event) => {
   state.evidenceSearch = event.target.value;
   renderEvidenceLedger();
 });
+$("#matrixTableWrap").addEventListener("scroll", updateMatrixScrollState, { passive: true });
+$("#matrixScrollHint").addEventListener("click", () => {
+  const wrap = $("#matrixTableWrap");
+  wrap.scrollBy({ left: Math.max(320, wrap.clientWidth * 0.72), behavior: "smooth" });
+});
 $("#copyQuote").addEventListener("click", async () => { if (state.currentQuote) { await navigator.clipboard?.writeText(state.currentQuote); toast("原话与来源已复制"); } });
 $("#copyReport").addEventListener("click", async () => { await navigator.clipboard?.writeText($("#reportPaper").innerText); toast("报告全文已复制"); });
 $("#helpButton").addEventListener("click", () => toast("流程：采集/上传 → 逐份转录 → 导入大纲 → 并发分析 → 导出 Excel / Word / PPT"));
@@ -2663,6 +2700,7 @@ window.addEventListener("hashchange", () => showView(savedView(), { updateHash: 
 window.addEventListener("resize", () => {
   updateTranscriptTableScrollState();
   updateRolePreviewScrollState();
+  updateMatrixScrollState();
 });
 
 async function initializeApp() {
