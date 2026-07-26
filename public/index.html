@@ -260,7 +260,7 @@
         <section class="view" id="report-view">
           <div class="section-title report-title report-hero">
             <div><div class="eyebrow">EVIDENCE-LED STRATEGY DELIVERABLE</div><h1>综合洞察与策略 Deck</h1><p>以多份访谈大纲为研究场景，以对应样本与原话证据为基石，将洞察转译为可执行的市场策略。</p></div>
-            <button class="primary-button report-generate-button" id="generateDeckScript" disabled><span>✦</span>生成综合文字稿</button>
+            <button class="primary-button report-generate-button" id="generateDeckScript" disabled><span>✦</span>启动 Deep Research</button>
           </div>
 
           <section class="report-source-panel panel">
@@ -282,8 +282,14 @@
 
           <section class="delivery-module manuscript-module">
             <div class="delivery-module-head">
-              <div><div class="eyebrow">01 · SLIDE MANUSCRIPT</div><h2>文字稿版幻灯片内容</h2><p>先审阅每页标题、核心结论、内容结构、方法学与版式建议，再进入 PPTX 生成。</p></div>
+              <div><div class="eyebrow">01 · DEEP RESEARCH MANUSCRIPT</div><h2>详细文字版洞察报告</h2><p>不受 16:9 画布限制，逐页完整呈现标题、分析正文、关键证据、框架方法、呈现建议与管理层需拍板事项。</p></div>
               <div class="deck-status" id="deckScriptStatus">等待生成</div>
+            </div>
+            <div class="report-research-progress" id="reportResearchProgress" hidden>
+              <div><span id="reportResearchStage">正在准备研究任务</span><strong id="reportResearchPercent">0%</strong></div>
+              <i><b id="reportResearchBar"></b></i>
+              <p><span id="reportResearchMessage">即将启动</span><span id="reportResearchElapsed">已用时 0 秒</span></p>
+              <small>Deep Research 仅检索公开方法资料；访谈原文与样本证据在无联网工具的独立步骤中综合。</small>
             </div>
             <div class="deck-script-scroll" id="deckScriptContainer"></div>
           </section>

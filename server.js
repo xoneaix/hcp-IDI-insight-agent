@@ -29,6 +29,7 @@ const ROOT = join(process.cwd(), "public");
 const PORT = Number(process.env.PORT || 4174);
 const MAP_MODEL = process.env.MAP_MODEL || "gpt-5.4-mini";
 const SYNTHESIS_MODEL = process.env.SYNTHESIS_MODEL || "gpt-5.5";
+const DEEP_RESEARCH_MODEL = process.env.DEEP_RESEARCH_MODEL || "o3-deep-research";
 const MAX_CONCURRENCY = Number(process.env.MAX_CONCURRENCY || 4);
 const AUTH_REQUIRED = process.env.AUTH_REQUIRED === "true";
 const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), "data");
@@ -199,7 +200,9 @@ const deckScriptSchema = {
     subtitle: { type: "string" },
     audience: { type: "string" },
     narrative_arc: { type: "string" },
+    research_methodology: { type: "string" },
     executive_summary: { type: "string" },
+    decision_questions: { type: "array", items: { type: "string" } },
     cross_scenario_insights: {
       type: "array",
       items: {
@@ -249,25 +252,31 @@ const deckScriptSchema = {
         properties: {
           title: { type: "string" },
           takeaway: { type: "string" },
+          purpose: { type: "string" },
+          narrative: { type: "string" },
           layout: { type: "string", enum: ["封面", "执行摘要", "场景对比", "洞察证据", "旅程地图", "策略框架", "行动路线图", "研究边界"] },
+          framework: { type: "string" },
           method: { type: "string" },
           content: {
             type: "array",
-            minItems: 0,
-            maxItems: 4,
+            minItems: 1,
+            maxItems: 5,
             items: {
               type: "object",
               additionalProperties: false,
               properties: {
                 heading: { type: "string" },
-                body: { type: "string" }
+                body: { type: "string" },
+                supporting_points: { type: "array", items: { type: "string" }, maxItems: 5 }
               },
-              required: ["heading", "body"]
+              required: ["heading", "body", "supporting_points"]
             }
           },
+          implications: { type: "array", items: { type: "string" }, maxItems: 5 },
+          management_decisions: { type: "array", items: { type: "string" }, maxItems: 4 },
           evidence: {
             type: "array",
-            maxItems: 3,
+            maxItems: 5,
             items: {
               type: "object",
               additionalProperties: false,
@@ -280,12 +289,12 @@ const deckScriptSchema = {
           },
           visual_note: { type: "string" }
         },
-        required: ["title", "takeaway", "layout", "method", "content", "evidence", "visual_note"]
+        required: ["title", "takeaway", "purpose", "narrative", "layout", "framework", "method", "content", "implications", "management_decisions", "evidence", "visual_note"]
       }
     },
     caveats: { type: "array", items: { type: "string" } }
   },
-  required: ["title", "subtitle", "audience", "narrative_arc", "executive_summary", "cross_scenario_insights", "strategic_priorities", "slides", "caveats"]
+  required: ["title", "subtitle", "audience", "narrative_arc", "research_methodology", "executive_summary", "decision_questions", "cross_scenario_insights", "strategic_priorities", "slides", "caveats"]
 };
 
 const roleAssignmentSchema = {
@@ -428,26 +437,74 @@ function deckGuidePacket(guide = {}, index = 0) {
   };
 }
 
-async function generateDeckScript(projectName, guides, instructions = "") {
+function deepResearchMethodPrompt(_projectName, guideCount, sampleCount, _instructions = "") {
+  return `请以资深医药定性研究方法专家和品牌策略顾问的身份，研究并提出一套“从多场景深度访谈到市场策略 Deck”的严谨综合方法。
+
+任务规模（不含项目名称、访谈原文、产品信息或个人信息）：
+- 独立访谈场景：${guideCount} 个
+- 定性样本：${sampleCount} 份
+- 使用目的：比较不同访谈场景，识别行为路径、决策驱动、阻碍与可验证的市场策略。
+
+请研究公开、可靠的一手或权威来源，并输出一份可直接交给后续分析模型使用的方法备忘录。重点回答：
+1. 如何保持不同 Discussion Guide 与样本池边界，同时完成跨场景比较。
+2. 如何从逐题回答与逐字引文建立“事实—解释—洞察—策略”的证据链，并保留反例、不确定性和少数观点。
+3. 如何把定性发现组织为管理层可决策的逐页文字策划稿；每页应包含结论正文、关键证据、分析框架、呈现建议与需拍板事项。
+4. 哪些视觉方法适合行为旅程、场景对比、决策驱动/阻碍、机会优先级与行动路线图。
+5. 医药市场研究中应如何处理合规、隐私、样本限制与人工复核。
+
+只输出方法论与报告结构建议，不对本项目患者、产品或市场作任何事实判断。用简体中文，清楚区分“推荐做法”和“需要避免的偏差”，并附可点击来源。`;
+}
+
+async function startDeepResearchMethod(projectName, guideCount, sampleCount, instructions = "") {
+  const body = {
+    model: DEEP_RESEARCH_MODEL,
+    background: true,
+    max_tool_calls: 18,
+    reasoning: { summary: "auto" },
+    tools: [{ type: "web_search_preview" }],
+    input: deepResearchMethodPrompt(projectName, guideCount, sampleCount, instructions)
+  };
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
+    body: JSON.stringify(body)
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data?.error?.message || `OpenAI Deep Research 错误 (${response.status})`);
+  return data;
+}
+
+async function retrieveBackgroundResponse(responseId) {
+  const response = await fetch(`https://api.openai.com/v1/responses/${encodeURIComponent(responseId)}`, {
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` }
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data?.error?.message || `OpenAI 后台任务查询错误 (${response.status})`);
+  return data;
+}
+
+async function synthesizeDeckScript(projectName, guides, instructions = "", researchMethodology = "") {
   const packets = guides.slice(0, 4).map(deckGuidePacket);
   const sampleCount = packets.reduce((total, guide) => total + guide.sample_count, 0);
   const response = await openAIResponses({
     model: SYNTHESIS_MODEL,
-    reasoning: { effort: "medium" },
+    reasoning: { effort: "high" },
     input: [
       {
         role: "system",
-        content: `你是资深医药定性研究负责人兼市场策略顾问。请把多个访谈场景的研究大纲、样本逐题矩阵与证据综合为面向市场部决策的幻灯片文字稿。
+        content: `你是资深医药定性研究负责人兼市场策略顾问。请把多个访谈场景的研究大纲、样本逐题矩阵与证据综合为一份详细的“逐页幻灯片文字策划稿”，供市场部、医学与研究负责人先审阅，再由系统生成专业 Deck。
 
 必须遵守：
 1. 两份或多份 Discussion Guide 是不同研究场景，既要分别呈现，也要进行跨场景比较；不得把不同样本池混为同一人群。
 2. 只使用输入中的研究结果和受访原话，不发明数据、事实或引用；少数观点不得写成共识。
 3. 每页只承担一个叙事任务，标题优先使用可直接说出口的结论句，而不是呆板章节名。
 4. 叙事从研究问题与场景开始，经行为路径、关键张力、场景差异和机会判断，最终落到市场策略优先级与可验证行动。
-5. 每页必须给出标题、核心结论、内容块、推荐方法学、版式建议和可追溯证据。封面页保持极简。
-6. 建议 10–16 页；正文密度适合 16:9 管理层汇报，不要把长报告原文直接塞进幻灯片。
+5. 每页必须完整给出：页面目的、结论式标题、核心判断、充分的分析正文、2–5 个内容模块、建议框架/方法学、策略含义、管理层需拍板事项、建议呈现方式和可追溯证据。封面页也要提供制作说明，但最终 Deck 封面保持极简。
+6. 建议 10–16 页。这里输出的是详细文字策划稿，不受 16:9 画布字数限制；正文要足以让研究负责人判断逻辑是否完整。后续 Deck 会压缩和视觉化，不要为了“像幻灯片”而牺牲分析深度。
 7. 策略建议要明确说明其证据基础、适用场景和验证方式；所有结论需由研究、医学与合规人员复核。
-8. 输出简体中文。`
+8. 参考优秀商业策划文字稿的组织习惯：正文之后补关键证据/依据、图表建议与管理层需拍板；但不要套用与本项目无关的商业数据。
+9. 方法论资料只用于提升分析结构，绝不能覆盖或改写访谈证据；外部资料中的事实不得写成本项目发现。
+10. 输出简体中文。`
       },
       {
         role: "user",
@@ -456,13 +513,20 @@ async function generateDeckScript(projectName, guides, instructions = "") {
 样本总数：${sampleCount}
 研究者补充要求：${String(instructions || "突出首购与复购场景的关键差异，以患者行为路径、决策驱动与阻碍为主线，输出可以验证的市场策略优先级。").slice(0, 3_000)}
 
+Deep Research 方法备忘录（只作为结构与方法参考，不是项目事实来源）：
+${String(researchMethodology || "采用场景分层、证据三角验证、反例保留和行动假设验证。").slice(0, 18_000)}
+
 分场景研究资料：
 ${JSON.stringify(packets)}`
       }
     ],
     text: { format: { type: "json_schema", name: "cross_scenario_deck_script", strict: true, schema: deckScriptSchema } }
-  }, "跨场景洞察 Deck 文字稿");
+  }, "Deep Research 洞察文字稿结构化");
   return safeJsonParse(extractResponseText(response));
+}
+
+async function generateDeckScript(projectName, guides, instructions = "") {
+  return synthesizeDeckScript(projectName, guides, instructions);
 }
 
 function formatRoleTranscriptTurns(turns, activeLineSet) {
@@ -1123,6 +1187,159 @@ async function handleAnalyze(req, res) {
     answers: analyses[index].outline_answers
   }));
   json(res, 200, { report, analyses, matrix, questions: payload.questions, models: { map: MAP_MODEL, synthesis: SYNTHESIS_MODEL } });
+}
+
+const REPORT_JOB_TTL_MS = 3 * 60 * 60 * 1000;
+const reportJobs = new Map();
+
+function cleanupReportJobs() {
+  const now = Date.now();
+  for (const [id, job] of reportJobs.entries()) {
+    if (now - job.updatedAt > REPORT_JOB_TTL_MS) reportJobs.delete(id);
+  }
+}
+
+function updateReportJob(id, patch) {
+  const job = reportJobs.get(id);
+  if (!job) return;
+  Object.assign(job, patch, { updatedAt: Date.now() });
+}
+
+function publicReportJob(job) {
+  return {
+    id: job.id,
+    status: job.status,
+    stage: job.stage,
+    progress: job.progress,
+    message: job.message,
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt,
+    elapsedSeconds: Math.max(0, Math.round((Date.now() - job.startedAt) / 1000)),
+    researchCalls: job.researchCalls || 0,
+    result: job.status === "completed" ? job.result : undefined,
+    error: job.status === "failed" ? job.error : undefined
+  };
+}
+
+async function runReportJob(jobId, payload) {
+  try {
+    const guides = payload.guides;
+    const sampleCount = guides.reduce((total, guide) => total + guide.matrix.length, 0);
+    updateReportJob(jobId, {
+      status: "running",
+      stage: "method_planning",
+      progress: 6,
+      message: "正在建立跨场景研究问题与证据边界"
+    });
+    const research = await startDeepResearchMethod(payload.projectName, guides.length, sampleCount, payload.instructions);
+    updateReportJob(jobId, {
+      status: "running",
+      stage: "deep_research",
+      progress: 12,
+      responseId: research.id,
+      message: "Deep Research 正在检索公开方法资料；访谈原文不会进入联网检索"
+    });
+    let background = research;
+    while (background.status === "queued" || background.status === "in_progress") {
+      await new Promise((resolve) => setTimeout(resolve, 4_000));
+      background = await retrieveBackgroundResponse(research.id);
+      const calls = (background.output || []).filter((item) => ["web_search_call", "file_search_call", "code_interpreter_call", "mcp_tool_call"].includes(item.type)).length;
+      const elapsed = Math.max(0, Math.round((Date.now() - reportJobs.get(jobId).startedAt) / 1000));
+      updateReportJob(jobId, {
+        status: "running",
+        stage: "deep_research",
+        researchCalls: calls,
+        progress: Math.min(68, 14 + calls * 4 + Math.floor(elapsed / 18)),
+        message: calls
+          ? `Deep Research 已完成 ${calls} 次资料检索/阅读，正在形成方法备忘录`
+          : "Deep Research 正在理解任务并规划检索路径"
+      });
+    }
+    if (background.status !== "completed") {
+      throw new Error(background?.error?.message || `Deep Research 未完成（${background.status || "未知状态"}）`);
+    }
+    await recordAIUsage("洞察报告 Deep Research 方法研究", DEEP_RESEARCH_MODEL, background);
+    const methodology = extractResponseText(background);
+    if (!methodology) throw new Error("Deep Research 未返回可用的方法备忘录");
+    updateReportJob(jobId, {
+      status: "running",
+      stage: "evidence_synthesis",
+      progress: 72,
+      message: "方法研究完成，正在离线综合两份大纲、样本回答与逐字证据"
+    });
+    const deckScript = await synthesizeDeckScript(payload.projectName, guides, payload.instructions, methodology);
+    updateReportJob(jobId, {
+      status: "running",
+      stage: "deck_planning",
+      progress: 96,
+      message: "正在校验逐页叙事、证据索引与 Deck 呈现建议"
+    });
+    const sourceSummary = {
+      guideCount: guides.length,
+      sampleCount,
+      questionCount: guides.reduce((total, guide) => total + (guide.questions?.length || 0), 0)
+    };
+    updateReportJob(jobId, {
+      status: "completed",
+      stage: "completed",
+      progress: 100,
+      message: "详细文字版洞察报告与专业 Deck 规划已完成",
+      result: {
+        deckScript,
+        sourceSummary,
+        engine: {
+          research: DEEP_RESEARCH_MODEL,
+          synthesis: SYNTHESIS_MODEL,
+          privateEvidenceStayedOfflineFromWebSearch: true
+        }
+      }
+    });
+  } catch (error) {
+    updateReportJob(jobId, {
+      status: "failed",
+      stage: "failed",
+      progress: 100,
+      message: "详细洞察报告生成失败",
+      error: humanizeOpenAIError(error)
+    });
+  }
+}
+
+async function handleReportJobStart(req, res) {
+  if (!API_KEY) return json(res, 503, { error: "尚未连接 AI 服务；请先完成 AI 服务配置。" });
+  cleanupReportJobs();
+  const payload = await readJson(req, 25_000_000);
+  const guides = Array.isArray(payload.guides)
+    ? payload.guides.filter((guide) => guide?.report && Array.isArray(guide.matrix) && guide.matrix.length)
+    : [];
+  if (!guides.length) throw new Error("请先完成至少一个访谈场景的大纲驱动分析");
+  if (guides.length > 4) throw new Error("单次最多综合 4 个访谈场景");
+  const id = randomUUID();
+  const job = {
+    id,
+    userId: req.user?.id,
+    status: "queued",
+    stage: "queued",
+    progress: 2,
+    message: "详细洞察报告任务已创建，正在进入研究队列",
+    startedAt: Date.now(),
+    updatedAt: Date.now(),
+    researchCalls: 0
+  };
+  reportJobs.set(id, job);
+  runReportJob(id, {
+    projectName: String(payload.projectName || "未命名研究项目"),
+    instructions: String(payload.instructions || ""),
+    guides
+  });
+  return json(res, 202, publicReportJob(job));
+}
+
+function handleReportJobStatus(req, res, id) {
+  cleanupReportJobs();
+  const job = reportJobs.get(id);
+  if (!job || (job.userId && req.user?.id && job.userId !== req.user.id)) return json(res, 404, { error: "洞察报告任务不存在或已过期" });
+  return json(res, 200, publicReportJob(job));
 }
 
 async function handleDeckScript(req, res) {
@@ -1935,7 +2152,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname.startsWith("/api/admin/")) return await handleAdmin(req, res, url.pathname);
     if (req.method === "GET" && url.pathname === "/api/health") {
-      return json(res, 200, { ok: true, apiConfigured: Boolean(API_KEY), apiKeySource: process.env.OPENAI_API_KEY ? "server" : API_KEY ? "temporary" : "none", authRequired: AUTH_REQUIRED, storage: process.env.DATABASE_URL ? "postgres" : "sqlite", dataDir: DATA_DIR, libraryFileDir: LIBRARY_FILE_DIR, emailConfigured: mailConfigured(), emailProvider: mailProviderLabel(), mapModel: MAP_MODEL, synthesisModel: SYNTHESIS_MODEL });
+      return json(res, 200, { ok: true, apiConfigured: Boolean(API_KEY), apiKeySource: process.env.OPENAI_API_KEY ? "server" : API_KEY ? "temporary" : "none", authRequired: AUTH_REQUIRED, storage: process.env.DATABASE_URL ? "postgres" : "sqlite", dataDir: DATA_DIR, libraryFileDir: LIBRARY_FILE_DIR, emailConfigured: mailConfigured(), emailProvider: mailProviderLabel(), mapModel: MAP_MODEL, synthesisModel: SYNTHESIS_MODEL, deepResearchModel: DEEP_RESEARCH_MODEL });
     }
     if (url.pathname.startsWith("/api/")) {
       const apiUser = await requireUser(req, res);
@@ -1946,6 +2163,9 @@ const server = http.createServer(async (req, res) => {
     const analysisJobMatch = url.pathname.match(/^\/api\/analyze\/jobs\/([^/]+)$/);
     if (req.method === "GET" && analysisJobMatch) return handleAnalysisJobStatus(req, res, analysisJobMatch[1]);
     if (req.method === "POST" && url.pathname === "/api/analyze") return await handleAnalyze(req, res);
+    if (req.method === "POST" && url.pathname === "/api/report/jobs") return await handleReportJobStart(req, res);
+    const reportJobMatch = url.pathname.match(/^\/api\/report\/jobs\/([^/]+)$/);
+    if (req.method === "GET" && reportJobMatch) return handleReportJobStatus(req, res, reportJobMatch[1]);
     if (req.method === "POST" && url.pathname === "/api/report/deck-script") return await handleDeckScript(req, res);
     if (req.method === "POST" && url.pathname === "/api/roles/identify") return await handleIdentifyRoles(req, res);
     if (req.method === "POST" && url.pathname === "/api/settings") {
