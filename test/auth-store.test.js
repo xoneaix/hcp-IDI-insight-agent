@@ -40,3 +40,36 @@ test("company access store enforces domain, sessions and approval workflow", asy
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("AI usage statistics preserve exact tokens and aggregate by account and day", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "medvoice-usage-"));
+  try {
+    const store = await AuthStore.create(join(directory, "auth.sqlite"));
+    await store.ensureAdmin("admin@hisunpharm.com", "Admin-password-2026!");
+    const admin = await store.authenticate("admin@hisunpharm.com", "Admin-password-2026!");
+    const userCredentials = await store.addUser("researcher@hisunpharm.com");
+    const user = await store.authenticate(userCredentials.email, userCredentials.temporaryPassword);
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString();
+    const outsideWindow = new Date(Date.now() - 12 * 86_400_000).toISOString();
+    store.recordUsage({ userId: admin.id, userEmail: admin.email, operation: "历史调用", model: "gpt-test", inputTokens: 100, totalTokens: 100, occurredAt: outsideWindow });
+    store.recordUsage({ userId: admin.id, userEmail: admin.email, operation: "角色识别", model: "gpt-test", inputTokens: 120, outputTokens: 30, totalTokens: 150, occurredAt: yesterday });
+    store.recordUsage({ userId: user.id, userEmail: user.email, operation: "访谈分析", model: "gpt-test", inputTokens: 500, outputTokens: 180, totalTokens: 680 });
+    store.recordUsage({ userId: user.id, userEmail: user.email, operation: "音频转录", model: "whisper-test", audioSeconds: 92.5 });
+
+    const stats = store.usageStats(7);
+    assert.equal(stats.days, 7);
+    assert.equal(stats.summary.totalTokens, 930);
+    assert.equal(stats.summary.inputTokens, 720);
+    assert.equal(stats.summary.outputTokens, 210);
+    assert.equal(stats.summary.requests, 4);
+    assert.equal(stats.summary.audioSeconds, 92.5);
+    assert.equal(stats.daily.reduce((total, day) => total + day.totalTokens, 0), 830);
+    assert.equal(stats.summary.recentTokens, 830);
+    const researcher = stats.users.find((item) => item.email === "researcher@hisunpharm.com");
+    assert.equal(researcher.totalTokens, 680);
+    assert.equal(researcher.todayTokens, 680);
+    assert.equal(researcher.requests, 2);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

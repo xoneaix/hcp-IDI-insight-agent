@@ -4,6 +4,7 @@ import { access, appendFile, mkdir, readFile, rm, stat, unlink, writeFile } from
 import { basename, dirname, extname, join, normalize, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Transform } from "node:stream";
@@ -52,6 +53,7 @@ if (AUTH_REQUIRED) {
   await authStore.ensureAdmin(process.env.ADMIN_EMAIL, process.env.ADMIN_PASSWORD);
 }
 const loginAttempts = new Map();
+const requestContext = new AsyncLocalStorage();
 
 const mime = {
   ".html": "text/html; charset=utf-8",
@@ -211,7 +213,34 @@ const roleAssignmentSchema = {
   required: ["assignments", "review_notes"]
 };
 
-async function openAIResponses(body) {
+function usageInteger(value) {
+  return Math.max(0, Math.round(Number(value) || 0));
+}
+
+async function recordAIUsage(operation, model, response, options = {}) {
+  const usage = response?.usage || {};
+  const inputTokens = usageInteger(usage.input_tokens ?? usage.prompt_tokens);
+  const outputTokens = usageInteger(usage.output_tokens ?? usage.completion_tokens);
+  const totalTokens = Math.max(usageInteger(usage.total_tokens), inputTokens + outputTokens);
+  const audioSeconds = Math.max(0, Number(options.audioSeconds ?? usage.seconds) || 0);
+  const user = requestContext.getStore()?.user || { id: null, email: "system" };
+  try {
+    await authStore.recordUsage({
+      userId: Number(user.id) > 0 ? Number(user.id) : null,
+      userEmail: user.email || "system",
+      operation,
+      model,
+      inputTokens,
+      outputTokens,
+      totalTokens,
+      audioSeconds
+    });
+  } catch (error) {
+    console.warn(`[MedVoice] AI usage tracking failed: ${error.message}`);
+  }
+}
+
+async function openAIResponses(body, operation = "AI 文本处理") {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${API_KEY}` },
@@ -219,6 +248,7 @@ async function openAIResponses(body) {
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data?.error?.message || `OpenAI API 错误 (${response.status})`);
+  await recordAIUsage(operation, body.model, data);
   return data;
 }
 
@@ -236,7 +266,7 @@ async function analyzeDocument(document, outline, questions) {
       { role: "user", content: prompt }
     ],
     text: { format: { type: "json_schema", name: "interview_analysis", strict: true, schema: documentSchema } }
-  });
+  }, "访谈逐题分析");
   return safeJsonParse(extractResponseText(response));
 }
 
@@ -255,7 +285,7 @@ async function synthesize(projectName, outline, analyses) {
       }
     ],
     text: { format: { type: "json_schema", name: "cross_interview_synthesis", strict: true, schema: synthesisSchema } }
-  });
+  }, "跨样本洞察综合");
   return safeJsonParse(extractResponseText(response));
 }
 
@@ -284,7 +314,7 @@ async function identifyRoleBatch(document, turns, contextTurns = turns) {
       }
     ],
     text: { format: { type: "json_schema", name: "interview_role_assignments", strict: true, schema: roleAssignmentSchema } }
-  });
+  }, "对话角色识别");
   const parsed = safeJsonParse(extractResponseText(response));
   parsed.assignments = (parsed.assignments || []).filter((assignment) => activeLineSet.has(Number(assignment.line_no)));
   return parsed;
@@ -499,6 +529,10 @@ async function handleAdmin(req, res, pathname) {
   const admin = await requireUser(req, res, "admin");
   if (!admin) return;
   if (pathname === "/api/admin/users" && req.method === "GET") return json(res, 200, { users: await authStore.listUsers() });
+  if (pathname === "/api/admin/usage" && req.method === "GET") {
+    const days = Number(new URL(req.url, `http://${req.headers.host}`).searchParams.get("days") || 14);
+    return json(res, 200, await authStore.usageStats(days));
+  }
   if (pathname === "/api/admin/test-email" && req.method === "POST") {
     if (!mailConfigured()) throw new Error("邮件服务尚未配置：请先设置 BREVO_API_KEY 与 MAIL_FROM_EMAIL");
     const payload = await readJson(req, 100_000).catch(() => ({}));
@@ -1265,12 +1299,13 @@ async function requestTranscription(bytes, filename, mimeType, mode) {
     try {
       const form = new FormData();
       form.append("file", new Blob([bytes], { type: mimeType }), filename);
+      const model = mode === "diarize" ? "gpt-4o-transcribe-diarize" : "whisper-1";
       if (mode === "diarize") {
-        form.append("model", "gpt-4o-transcribe-diarize");
+        form.append("model", model);
         form.append("response_format", "diarized_json");
         form.append("chunking_strategy", "auto");
       } else {
-        form.append("model", "whisper-1");
+        form.append("model", model);
         form.append("response_format", "verbose_json");
         form.append("timestamp_granularities[]", "segment");
       }
@@ -1281,7 +1316,10 @@ async function requestTranscription(bytes, filename, mimeType, mode) {
         signal: AbortSignal.timeout(10 * 60 * 1000)
       });
       const data = await response.json().catch(() => ({}));
-      if (response.ok) return data;
+      if (response.ok) {
+        await recordAIUsage("AI 音频转录", model, data, { audioSeconds: data?.usage?.seconds ?? data?.duration });
+        return data;
+      }
       const openAIError = data?.error || {};
       const error = new Error(humanizeOpenAIError({ ...openAIError, status: response.status }));
       error.status = response.status;
@@ -1703,6 +1741,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith("/api/")) {
       const apiUser = await requireUser(req, res);
       if (!apiUser) return;
+      requestContext.enterWith({ user: apiUser });
     }
     if (req.method === "POST" && url.pathname === "/api/analyze/jobs") return await handleAnalysisJobStart(req, res);
     const analysisJobMatch = url.pathname.match(/^\/api\/analyze\/jobs\/([^/]+)$/);
