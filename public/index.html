@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" href="assets/medvoice-logo-v4.webp" as="image" type="image/webp" fetchpriority="high" />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=20260726.10" />
+    <link rel="stylesheet" href="style.css?v=20260726.11" />
   </head>
   <body>
     <div class="app-shell">
@@ -60,7 +60,6 @@
             <div class="privacy-badge"><i>◆</i> 合规保护已开启</div>
             <button class="api-connect" id="apiSettingsButton"><i></i><span id="apiSettingsLabel">连接 AI</span></button>
             <button class="secondary-button" id="adminAccess" hidden>Access 管理</button>
-            <button class="primary-button" id="newAnalysis"><span>＋</span> 新建研究</button>
           </div>
         </header>
 
@@ -112,7 +111,20 @@
           <div class="section-title transcript-title">
             <div><div class="eyebrow">SECURE INTERVIEW CAPTURE</div><h1>访谈采集与转录</h1><p>从原始资料到可分析逐字稿，在一个清晰流程中完成。</p></div>
             <div class="capture-steps" aria-label="访谈处理流程">
-              <span class="active"><b>01</b> 资料采集</span><i></i><span><b>02</b> AI 转录</span><i></i><span><b>03</b> 角色整理</span>
+              <span class="capture-step active">
+                <span class="capture-step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 4.5h8l4 4v11H6z"/><path d="M14 4.5v4h4M9 13h6m-3-3v6"/></svg></span>
+                <span class="capture-step-copy"><b>01</b><small>资料采集</small></span>
+              </span>
+              <i aria-hidden="true"></i>
+              <span class="capture-step">
+                <span class="capture-step-icon ai" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 13.4 8l4.6 1.4-4.6 1.4-1.4 4.6-1.4-4.6L6 9.4 10.6 8z"/><path d="m18.5 14 .7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7z"/></svg></span>
+                <span class="capture-step-copy"><b>02</b><small>AI 转录</small></span>
+              </span>
+              <i aria-hidden="true"></i>
+              <span class="capture-step">
+                <span class="capture-step-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="2.7"/><circle cx="16.5" cy="8" r="2.7"/><path d="M3.5 18c.4-3.2 2.1-4.9 5-4.9s4.6 1.7 5 4.9m.6-4.6c3.7-.5 5.9 1.1 6.4 4.6"/></svg></span>
+                <span class="capture-step-copy"><b>03</b><small>角色整理</small></span>
+              </span>
             </div>
           </div>
           <article class="panel capture-panel">
@@ -223,7 +235,7 @@
           <article class="panel matrix-panel">
             <div class="table-wrap" id="matrixTableWrap"><table class="matrix-table" id="matrixTable"></table></div>
             <button class="matrix-scroll-hint matrix-scroll-hint-down" id="matrixVerticalScrollHint" type="button" hidden>↓ 向下滑动查看更多受访者</button>
-            <button class="matrix-scroll-hint matrix-scroll-hint-right" id="matrixHorizontalScrollHint" type="button" hidden><span>向右滑动查看更多问题</span><b>→</b></button>
+            <button class="matrix-scroll-hint matrix-scroll-hint-right" id="matrixHorizontalScrollHint" type="button" hidden><b>→</b><span>向右滑动查看更多问题</span></button>
           </article>
           <div class="matrix-bottom">
             <article class="panel segment-card matrix-gap-card">
@@ -309,6 +321,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="app.js?v=20260726.9"></script>
+    <script type="module" src="app.js?v=20260726.10"></script>
   </body>
 </html>

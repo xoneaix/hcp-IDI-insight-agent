@@ -1166,6 +1166,7 @@ function renderTranscripts() {
       const roleProcessingThis = state.roleProcessing && state.roleProgress?.currentName === item.id;
       const canIdentifyRole = Boolean(item.text) && !state.roleProcessing;
       const roleActionLabel = roleProcessingThis ? "处理中" : item.roleResult ? "重新区分" : "区分角色";
+      const refreshActionIcon = '<svg class="refresh-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66"/><path d="M20 4v7h-7"/></svg>';
       const statusClass = item.status.includes("中") || item.status.includes("预处理") ? "processing" : item.status === "转录失败" || item.status === "转换失败" || item.status === "角色区分失败" ? "failed" : item.status === "录音已保存" ? "saved" : "";
       const sourceLabel = item.source === "实时录音" ? `实时录音${item.recordedAt ? ` · ${escapeHTML(item.recordedAt)}` : ""}` : item.source === "音频预处理" ? "音频预处理" : "上传文件";
       const fileSize = item.file?.size || item.fileSize || 0;
@@ -1179,7 +1180,7 @@ function renderTranscripts() {
         <td><select class="type-select" data-index="${index}" aria-label="受访者类型"><option value="HCP" ${normalizeRespondentType(item.type) === "HCP" ? "selected" : ""}>HCP</option><option value="Patient" ${normalizeRespondentType(item.type) === "Patient" ? "selected" : ""}>Patient</option></select></td>
         <td>${escapeHTML(item.duration)}</td>
         <td><span class="status-pill ${statusClass}">${escapeHTML(item.status)}</span>${item.progressText ? `<small class="transcript-progress">${escapeHTML(item.progressText)}</small>` : ""}${uploadProgress !== null ? `<span class="upload-progress-bar" aria-label="上传保存进度 ${uploadProgress}%"><i style="width:${uploadProgress}%"></i></span>` : ""}</td>
-        <td><div class="row-actions"><button class="transcribe-button ${transcribeClass}" data-index="${index}" ${transcribeDisabled ? "disabled" : ""}>${actionLabel}</button><button class="role-row-button" data-index="${index}" ${canIdentifyRole ? "" : "disabled"}>${roleActionLabel}</button></div></td>
+        <td><div class="row-actions"><button class="transcribe-button ${transcribeClass}" data-index="${index}" ${transcribeDisabled ? "disabled" : ""}>${actionLabel.startsWith("重新") ? refreshActionIcon : ""}<span>${escapeHTML(actionLabel)}</span></button><button class="role-row-button" data-index="${index}" ${canIdentifyRole ? "" : "disabled"}>${roleActionLabel.startsWith("重新") ? refreshActionIcon : ""}<span>${escapeHTML(roleActionLabel)}</span></button></div></td>
       </tr>`;
     }).join("");
   }
@@ -2158,7 +2159,7 @@ function renderMatrix() {
     requestAnimationFrame(updateMatrixScrollState);
     return;
   }
-  table.innerHTML = `<thead><tr><th>受访者 / 样本</th>${headers}</tr></thead><tbody>${state.matrix.map((row, rowIndex) => `<tr><td><strong>${escapeHTML(row.document_id)}</strong><small>${escapeHTML(row.name || row.type)}</small></td>${state.questions.map((_, questionIndex) => {
+  table.innerHTML = `<thead><tr><th>受访者 / 样本</th>${headers}</tr></thead><tbody>${state.matrix.map((row, rowIndex) => `<tr><td class="matrix-sample-cell"><strong>${escapeHTML(row.document_id)}</strong><small title="${escapeHTML(row.name || row.type)}">${escapeHTML(row.name || row.type)}</small></td>${state.questions.map((_, questionIndex) => {
     const answer = row.answers?.[questionIndex] || { answer: "未覆盖", coverage: "未覆盖", quotes: [] };
     const cls = answer.coverage === "完整覆盖" ? "yes" : answer.coverage === "部分覆盖" ? "mixed" : "no";
     return `<td class="answer-cell" data-row="${rowIndex}" data-question="${questionIndex}">${escapeHTML(answer.answer)}<br><span class="coverage-badge ${cls}">${escapeHTML(answer.coverage)}</span></td>`;
@@ -2596,7 +2597,6 @@ window.addEventListener("resize", hideConfidencePopover);
 $("#cancelAnalysis").addEventListener("click", () => $("#analysisDialog").close());
 $("#goCollect").addEventListener("click", () => showView("transcripts"));
 $("#goAnalyze").addEventListener("click", () => showView("outline"));
-$("#newAnalysis").addEventListener("click", createProject);
 $("#uploadButton").addEventListener("click", () => $("#fileInput").click());
 $("#browseButton")?.addEventListener("click", (event) => { event.stopPropagation(); $("#fileInput").click(); });
 $("#uploadZone").addEventListener("click", (event) => { if (!event.target.closest("button")) $("#fileInput").click(); });
