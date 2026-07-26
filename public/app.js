@@ -32,7 +32,11 @@ const state = {
   roleProcessing: false,
   roleProgress: null,
   recording: null,
-  currentQuote: null
+  currentQuote: null,
+  evidenceQuestionIndex: 0,
+  evidenceRowIndex: 0,
+  evidenceSearch: "",
+  expandedGapQuestionIndex: null
 };
 let outlineRenameGuideId = "";
 
@@ -145,6 +149,10 @@ function applyOutlineGuideToState(guide = activeOutlineGuide()) {
   state.analyses = Array.isArray(guide.analyses) ? guide.analyses : [];
   state.matrix = Array.isArray(guide.matrix) ? guide.matrix : [];
   state.report = guide.report || null;
+  state.evidenceQuestionIndex = 0;
+  state.evidenceRowIndex = 0;
+  state.evidenceSearch = "";
+  state.expandedGapQuestionIndex = null;
   const outlineInput = $("#outlineInput");
   if (outlineInput) outlineInput.value = state.outlineText;
 }
@@ -2100,17 +2108,21 @@ function renderSignals() {
 function renderMatrix() {
   const table = $("#matrixTable");
   if (!state.questions.length) {
+    $("#exportExcel").disabled = true;
     table.innerHTML = '<tbody><tr><td class="empty-row">请先在“大纲驱动·并发分析”中导入研究大纲。</td></tr></tbody>';
     renderGaps();
+    renderEvidenceLedger();
     return;
   }
   const headers = state.questions.map((question, index) => `<th class="question-header">Q${index + 1}<br>${escapeHTML(question)}</th>`).join("");
   if (!state.matrix.length) {
-    table.innerHTML = `<thead><tr><th>HCP / 受访者</th>${headers}</tr></thead><tbody><tr><td colspan="${state.questions.length + 1}" class="empty-row">大纲框架已建立。完成并发分析后生成逐题矩阵。</td></tr></tbody>`;
+    $("#exportExcel").disabled = true;
+    table.innerHTML = `<thead><tr><th>受访者 / 样本</th>${headers}</tr></thead><tbody><tr><td colspan="${state.questions.length + 1}" class="empty-row">大纲框架已建立。完成并发分析后生成逐题矩阵。</td></tr></tbody>`;
     renderGaps();
+    renderEvidenceLedger();
     return;
   }
-  table.innerHTML = `<thead><tr><th>HCP / 受访者</th>${headers}</tr></thead><tbody>${state.matrix.map((row, rowIndex) => `<tr><td><strong>${escapeHTML(row.document_id)}</strong><small>${escapeHTML(row.name || row.type)}</small></td>${state.questions.map((_, questionIndex) => {
+  table.innerHTML = `<thead><tr><th>受访者 / 样本</th>${headers}</tr></thead><tbody>${state.matrix.map((row, rowIndex) => `<tr><td><strong>${escapeHTML(row.document_id)}</strong><small>${escapeHTML(row.name || row.type)}</small></td>${state.questions.map((_, questionIndex) => {
     const answer = row.answers?.[questionIndex] || { answer: "未覆盖", coverage: "未覆盖", quotes: [] };
     const cls = answer.coverage === "完整覆盖" ? "yes" : answer.coverage === "部分覆盖" ? "mixed" : "no";
     return `<td class="answer-cell" data-row="${rowIndex}" data-question="${questionIndex}">${escapeHTML(answer.answer)}<br><span class="coverage-badge ${cls}">${escapeHTML(answer.coverage)}</span></td>`;
@@ -2118,6 +2130,7 @@ function renderMatrix() {
   $$(".answer-cell").forEach((cell) => cell.addEventListener("click", () => selectMatrixEvidence(+cell.dataset.row, +cell.dataset.question)));
   $("#exportExcel").disabled = false;
   renderGaps();
+  renderEvidenceLedger();
 }
 
 function renderGaps() {
@@ -2127,21 +2140,119 @@ function renderGaps() {
     return;
   }
   const gaps = state.questions.map((question, index) => {
-    const missing = state.matrix.filter((row) => row.answers?.[index]?.coverage === "未覆盖").length;
-    return { question, index, missing };
-  }).filter((item) => item.missing).sort((a, b) => b.missing - a.missing).slice(0, 5);
-  container.innerHTML = gaps.length ? gaps.map((item) => `<div class="gap-item"><strong>Q${item.index + 1} · ${escapeHTML(item.question)}</strong><p>${item.missing} / ${state.matrix.length} 份访谈未覆盖，建议补访或回看追问段落。</p><span>补访优先</span></div>`).join("") : '<div class="empty-compact">所有大纲问题均有样本覆盖；仍建议人工核验回答深度。</div>';
+    const missingRows = state.matrix.map((row, rowIndex) => ({ row, rowIndex })).filter(({ row }) => row.answers?.[index]?.coverage === "未覆盖");
+    return { question, index, missingRows, covered: state.matrix.length - missingRows.length };
+  }).filter((item) => item.missingRows.length).sort((a, b) => b.missingRows.length - a.missingRows.length).slice(0, 8);
+  container.innerHTML = gaps.length ? gaps.map((item) => {
+    const expanded = state.expandedGapQuestionIndex === item.index;
+    return `<article class="gap-item ${expanded ? "expanded" : ""}">
+      <button class="gap-item-main" type="button" data-gap-question="${item.index}" aria-expanded="${expanded}">
+        <span class="gap-question-code">Q${String(item.index + 1).padStart(2, "0")}</span>
+        <span class="gap-question-copy"><strong>${escapeHTML(item.question)}</strong><small>${item.missingRows.length} 份样本尚未覆盖，建议补访或回看追问段落。</small></span>
+        <span class="gap-coverage-score"><strong>${item.covered}/${state.matrix.length}</strong><small>已覆盖</small><em>${item.missingRows.length} 待补访</em></span>
+        <span class="gap-chevron" aria-hidden="true">⌄</span>
+      </button>
+      <div class="gap-missing-samples" ${expanded ? "" : "hidden"}>
+        <p>建议补访的样本编号</p>
+        <div>${item.missingRows.map(({ row, rowIndex }) => `<button type="button" data-gap-row="${rowIndex}" data-gap-evidence-question="${item.index}"><span>${escapeHTML(row.document_id)}</span><small>${escapeHTML(row.name || row.type || "受访样本")}</small><em>查看缺口 →</em></button>`).join("")}</div>
+      </div>
+    </article>`;
+  }).join("") : '<div class="empty-compact">所有大纲问题均有样本覆盖；仍建议人工核验回答深度。</div>';
+  $$(".gap-item-main", container).forEach((button) => button.addEventListener("click", () => {
+    const index = +button.dataset.gapQuestion;
+    state.expandedGapQuestionIndex = state.expandedGapQuestionIndex === index ? null : index;
+    renderGaps();
+  }));
+  $$("[data-gap-evidence-question]", container).forEach((button) => button.addEventListener("click", () => {
+    selectMatrixEvidence(+button.dataset.gapRow, +button.dataset.gapEvidenceQuestion);
+  }));
 }
 
 function selectMatrixEvidence(rowIndex, questionIndex) {
-  const row = state.matrix[rowIndex];
-  const answer = row.answers?.[questionIndex];
-  const quote = answer?.quotes?.[0];
-  state.currentQuote = quote ? `“${quote.quote}” — ${row.document_id}` : "该单元格没有可用逐字引文。";
-  $("#matrixQuote").textContent = quote ? `“${quote.quote}”` : "该回答没有可用逐字引文，请回看原始笔录。";
-  $("#quoteSource").textContent = `${row.document_id} · ${row.name || row.type}`;
-  $("#quoteQuestion").textContent = `Q${questionIndex + 1} · ${answer?.coverage || "未覆盖"}`;
-  $("#copyQuote").disabled = !quote;
+  state.evidenceQuestionIndex = Math.max(0, Math.min(questionIndex, state.questions.length - 1));
+  state.evidenceRowIndex = Math.max(0, Math.min(rowIndex, state.matrix.length - 1));
+  state.evidenceSearch = "";
+  renderEvidenceLedger();
+  $("#evidenceQuestionSearch").value = "";
+  $(".evidence-ledger")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function coverageClass(coverage) {
+  if (coverage === "完整覆盖") return "yes";
+  if (coverage === "部分覆盖") return "mixed";
+  return "no";
+}
+
+function renderEvidenceLedger() {
+  const questionList = $("#ledgerQuestionList");
+  const sampleTabs = $("#ledgerSampleTabs");
+  const detail = $("#ledgerEvidenceDetail");
+  const total = $("#evidenceQuestionTotal");
+  if (!questionList || !sampleTabs || !detail || !total) return;
+  total.textContent = `${state.questions.length} 个问题`;
+  if (!state.questions.length) {
+    questionList.innerHTML = '<div class="ledger-empty-list">等待问题框架</div>';
+    sampleTabs.innerHTML = "";
+    detail.innerHTML = '<div class="empty-compact">上传访谈大纲并完成分析后，可按问题与样本检索受访者原话。</div>';
+    $("#ledgerQuestionCode").textContent = "Q—";
+    $("#ledgerQuestionText").textContent = "尚未识别大纲问题";
+    $("#copyQuote").disabled = true;
+    state.currentQuote = null;
+    return;
+  }
+  state.evidenceQuestionIndex = Math.max(0, Math.min(state.evidenceQuestionIndex, state.questions.length - 1));
+  state.evidenceRowIndex = Math.max(0, Math.min(state.evidenceRowIndex, Math.max(state.matrix.length - 1, 0)));
+  const query = state.evidenceSearch.trim().toLowerCase();
+  const visibleQuestions = state.questions.map((question, index) => ({ question, index })).filter(({ question, index }) => !query || `q${index + 1} ${question}`.toLowerCase().includes(query));
+  if (visibleQuestions.length && !visibleQuestions.some(({ index }) => index === state.evidenceQuestionIndex)) {
+    state.evidenceQuestionIndex = visibleQuestions[0].index;
+    state.evidenceRowIndex = 0;
+  }
+  questionList.innerHTML = visibleQuestions.length ? visibleQuestions.map(({ question, index }) => {
+    const evidenceCount = state.matrix.filter((row) => row.answers?.[index]?.quotes?.length).length;
+    const active = index === state.evidenceQuestionIndex;
+    return `<button class="ledger-question-button ${active ? "active" : ""}" type="button" data-ledger-question="${index}" aria-pressed="${active}">
+      <span>Q${String(index + 1).padStart(2, "0")}</span><strong>${escapeHTML(question)}</strong><em>${evidenceCount}/${state.matrix.length || 0} 证据</em>
+    </button>`;
+  }).join("") : '<div class="ledger-empty-list">未找到匹配问题</div>';
+  const selectedQuestion = state.questions[state.evidenceQuestionIndex];
+  $("#ledgerQuestionCode").textContent = `Q${String(state.evidenceQuestionIndex + 1).padStart(2, "0")}`;
+  $("#ledgerQuestionText").textContent = selectedQuestion;
+  if (!state.matrix.length) {
+    sampleTabs.innerHTML = "";
+    detail.innerHTML = '<div class="empty-compact">问题框架已建立；完成并发分析后可逐样本核对原话。</div>';
+    $("#copyQuote").disabled = true;
+    state.currentQuote = null;
+  } else {
+    sampleTabs.innerHTML = state.matrix.map((row, rowIndex) => {
+      const answer = row.answers?.[state.evidenceQuestionIndex] || { coverage: "未覆盖", quotes: [] };
+      const active = rowIndex === state.evidenceRowIndex;
+      return `<button class="ledger-sample-button ${active ? "active" : ""}" type="button" data-ledger-row="${rowIndex}" aria-pressed="${active}">
+        <strong>${escapeHTML(row.document_id)}</strong><span class="${coverageClass(answer.coverage)}">${escapeHTML(answer.coverage)}</span><small>${answer.quotes?.length || 0} 条原话</small>
+      </button>`;
+    }).join("");
+    const row = state.matrix[state.evidenceRowIndex];
+    const answer = row?.answers?.[state.evidenceQuestionIndex] || { answer: "未覆盖", coverage: "未覆盖", quotes: [] };
+    const quotes = Array.isArray(answer.quotes) ? answer.quotes.filter((quote) => quote?.quote) : [];
+    state.currentQuote = quotes.length ? quotes.map((quote) => `“${quote.quote}”`).join("\n\n") + `\n— ${row.document_id} · Q${state.evidenceQuestionIndex + 1}` : null;
+    $("#copyQuote").disabled = !quotes.length;
+    detail.innerHTML = `<div class="ledger-source-head">
+      <div><span>${escapeHTML(row.document_id)}</span><strong>${escapeHTML(row.name || row.type || "受访样本")}</strong></div>
+      <em class="${coverageClass(answer.coverage)}">${escapeHTML(answer.coverage || "未覆盖")}</em>
+    </div>
+    <div class="ledger-answer-summary"><small>AI 对应摘要</small><p>${escapeHTML(answer.answer || "该样本未形成对应回答。")}</p></div>
+    <div class="ledger-verbatim-head"><div><small>VERBATIM EVIDENCE</small><strong>受访者原话</strong></div><span>${quotes.length} 条可追溯引文</span></div>
+    <div class="ledger-quotes">${quotes.length ? quotes.map((quote, index) => `<blockquote><span>${String(index + 1).padStart(2, "0")}</span><p>“${escapeHTML(quote.quote)}”</p><footer>${escapeHTML(quote.speaker || "受访者")}${quote.meaning ? ` · ${escapeHTML(quote.meaning)}` : ""}</footer></blockquote>`).join("") : '<div class="ledger-no-quote"><span>!</span><div><strong>该问题暂无受访者原话</strong><p>此样本被标记为未覆盖或证据不足，建议补访并围绕当前问题追问。</p></div></div>'}</div>`;
+  }
+  $$(".ledger-question-button", questionList).forEach((button) => button.addEventListener("click", () => {
+    state.evidenceQuestionIndex = +button.dataset.ledgerQuestion;
+    state.evidenceRowIndex = 0;
+    renderEvidenceLedger();
+  }));
+  $$(".ledger-sample-button", sampleTabs).forEach((button) => button.addEventListener("click", () => {
+    state.evidenceRowIndex = +button.dataset.ledgerRow;
+    renderEvidenceLedger();
+  }));
 }
 
 function renderReport() {
@@ -2499,6 +2610,10 @@ $("#runOutlineAnalysis").addEventListener("click", runAnalysis);
 $("#exportExcel").addEventListener("click", () => downloadExport("xlsx"));
 $("#exportWord").addEventListener("click", () => downloadExport("docx"));
 $("#exportPpt").addEventListener("click", () => downloadExport("pptx"));
+$("#evidenceQuestionSearch").addEventListener("input", (event) => {
+  state.evidenceSearch = event.target.value;
+  renderEvidenceLedger();
+});
 $("#copyQuote").addEventListener("click", async () => { if (state.currentQuote) { await navigator.clipboard?.writeText(state.currentQuote); toast("原话与来源已复制"); } });
 $("#copyReport").addEventListener("click", async () => { await navigator.clipboard?.writeText($("#reportPaper").innerText); toast("报告全文已复制"); });
 $("#helpButton").addEventListener("click", () => toast("流程：采集/上传 → 逐份转录 → 导入大纲 → 并发分析 → 导出 Excel / Word / PPT"));

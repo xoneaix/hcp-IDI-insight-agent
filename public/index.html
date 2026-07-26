@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" href="assets/medvoice-logo-v4.webp" as="image" type="image/webp" fetchpriority="high" />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=20260726.7" />
+    <link rel="stylesheet" href="style.css?v=20260726.8" />
   </head>
   <body>
     <div class="app-shell">
@@ -213,13 +213,27 @@
 
         <section class="view" id="matrix-view">
           <div class="section-title">
-            <div><div class="eyebrow">QUESTION × HCP MATRIX</div><h1>大纲问题 × HCP 分析矩阵</h1><p>横向对应大纲问题，纵向对应每位 HCP；保留原话证据与未覆盖项。</p></div>
+            <div><div class="eyebrow">QUESTION × RESPONDENT MATRIX</div><h1>大纲问题 × 受访者分析矩阵</h1><p>横向对应大纲问题，纵向对应每位 HCP 或 Patient；保留原话证据与未覆盖项。</p></div>
             <div class="matrix-actions"><div class="legend-pills"><span class="yes">● 完整覆盖</span><span class="mixed">● 部分覆盖</span><span class="no">● 未覆盖</span></div><button class="primary-button" id="exportExcel" disabled>导出 Excel ↗</button></div>
           </div>
           <article class="panel matrix-panel"><div class="table-wrap"><table class="matrix-table" id="matrixTable"></table></div></article>
           <div class="matrix-bottom">
-            <article class="panel segment-card"><div class="panel-head"><div><div class="eyebrow">RESEARCH GAP RADAR</div><h2>信息缺口与补访建议</h2></div></div><div id="gapList"></div></article>
-            <article class="panel evidence-ledger"><div class="panel-head"><div><div class="eyebrow">EVIDENCE LEDGER</div><h2>原话证据账本</h2></div><button class="text-button" id="copyQuote" disabled>复制引文</button></div><blockquote id="matrixQuote">完成分析后，点击矩阵单元格查看对应原话。</blockquote><div class="quote-meta"><span id="quoteSource">暂无证据</span><em id="quoteQuestion">待分析</em></div></article>
+            <article class="panel segment-card matrix-gap-card">
+              <div class="panel-head"><div><div class="eyebrow">RESEARCH GAP RADAR</div><h2>信息缺口与补访建议</h2><p>数字统一显示“已覆盖 / 总样本”；点击可查看待补访编号。</p></div><span class="matrix-panel-icon gap" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3a7 7 0 0 0-4.3 12.5c.8.6 1.3 1.5 1.3 2.5h6c0-1 .5-1.9 1.3-2.5A7 7 0 0 0 12 3Z"/><path d="M9.5 21h5M12 7v4m-2-2h4"/></svg></span></div>
+              <div id="gapList"></div>
+            </article>
+            <article class="panel evidence-ledger">
+              <div class="panel-head"><div><div class="eyebrow">VERBATIM EVIDENCE LEDGER</div><h2>原话证据账本</h2><p>按大纲问题与样本交叉检索，逐条回看受访者原话。</p></div><div class="ledger-head-actions"><span id="evidenceQuestionTotal">0 个问题</span><button class="text-button" id="copyQuote" disabled>复制引文</button></div></div>
+              <div class="ledger-toolbar"><label class="ledger-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.6"/><path d="m16 16 4 4"/></svg><input id="evidenceQuestionSearch" type="search" placeholder="检索问题编号或关键词" autocomplete="off" /></label><span>先选问题，再选样本，查看可追溯原话</span></div>
+              <div class="evidence-workbench">
+                <aside class="ledger-question-nav" id="ledgerQuestionList" aria-label="大纲问题列表"></aside>
+                <section class="ledger-review-pane">
+                  <div class="ledger-selected-question"><span id="ledgerQuestionCode">Q—</span><strong id="ledgerQuestionText">完成分析后，将在这里显示大纲问题。</strong></div>
+                  <div class="ledger-sample-tabs" id="ledgerSampleTabs" aria-label="选择受访样本"></div>
+                  <div class="ledger-evidence-detail" id="ledgerEvidenceDetail"><div class="empty-compact">点击矩阵单元格，或从左侧选择问题与样本，查看对应原话。</div></div>
+                </section>
+              </div>
+            </article>
           </div>
         </section>
 
@@ -282,6 +296,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="app.js?v=20260726.6"></script>
+    <script type="module" src="app.js?v=20260726.7"></script>
   </body>
 </html>
