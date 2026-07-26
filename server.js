@@ -750,6 +750,154 @@ function handleIdentifyRolesJobStatus(req, res, id) {
   return json(res, 200, publicRoleJob(job));
 }
 
+const ANALYSIS_JOB_TTL_MS = 2 * 60 * 60 * 1000;
+const analysisJobs = new Map();
+
+function cleanupAnalysisJobs() {
+  const now = Date.now();
+  for (const [id, job] of analysisJobs.entries()) {
+    if (now - job.updatedAt > ANALYSIS_JOB_TTL_MS) analysisJobs.delete(id);
+  }
+}
+
+function updateAnalysisJob(id, patch) {
+  const job = analysisJobs.get(id);
+  if (!job) return;
+  Object.assign(job, patch, { updatedAt: Date.now() });
+}
+
+function estimatedAnalysisRemainingSeconds(job) {
+  if (job.status === "completed" || job.status === "failed") return 0;
+  const elapsedSeconds = Math.max(1, (Date.now() - job.startedAt) / 1000);
+  if (job.stage === "synthesis" || job.stage === "validation") {
+    return Math.max(8, Math.round(38 - (Date.now() - (job.synthesisStartedAt || Date.now())) / 1000));
+  }
+  if (job.completedDocuments > 0) {
+    const remainingDocuments = Math.max(0, job.documentCount - job.completedDocuments);
+    return Math.max(12, Math.round((elapsedSeconds / job.completedDocuments) * remainingDocuments + 38));
+  }
+  return Math.max(45, Math.round(job.documentCount * 20 / Math.max(1, Math.min(MAX_CONCURRENCY, job.documentCount)) + 38));
+}
+
+function publicAnalysisJob(job) {
+  return {
+    id: job.id,
+    status: job.status,
+    stage: job.stage,
+    progress: job.progress,
+    completedDocuments: job.completedDocuments,
+    documentCount: job.documentCount,
+    currentName: job.currentName,
+    message: job.message,
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt,
+    elapsedSeconds: Math.max(0, Math.round((Date.now() - job.startedAt) / 1000)),
+    estimatedRemainingSeconds: estimatedAnalysisRemainingSeconds(job),
+    result: job.status === "completed" ? job.result : undefined,
+    error: job.status === "failed" ? job.error : undefined
+  };
+}
+
+async function runAnalysisJob(jobId, payload) {
+  try {
+    let completedDocuments = 0;
+    updateAnalysisJob(jobId, {
+      status: "running",
+      stage: "privacy",
+      progress: 6,
+      message: `正在检查 ${payload.documents.length} 份访谈的隐私字段与角色信息`
+    });
+    const analyses = await runWithConcurrency(payload.documents, MAX_CONCURRENCY, async (document) => {
+      updateAnalysisJob(jobId, {
+        status: "running",
+        stage: "mapping",
+        progress: Math.max(10, 10 + Math.round((completedDocuments / payload.documents.length) * 62)),
+        currentName: document.id,
+        message: `正在按大纲提取 ${document.id} 的逐题证据`
+      });
+      const result = await analyzeDocument(document, payload.outline, payload.questions);
+      completedDocuments += 1;
+      updateAnalysisJob(jobId, {
+        status: "running",
+        stage: "mapping",
+        completedDocuments,
+        currentName: document.id,
+        progress: 10 + Math.round((completedDocuments / payload.documents.length) * 62),
+        message: `已完成 ${completedDocuments}/${payload.documents.length} 份访谈的结构化提取`
+      });
+      return result;
+    });
+    updateAnalysisJob(jobId, {
+      status: "running",
+      stage: "synthesis",
+      progress: 78,
+      completedDocuments: payload.documents.length,
+      synthesisStartedAt: Date.now(),
+      currentName: "跨样本综合",
+      message: "逐份提取完成，正在识别跨样本共识、分歧与信息缺口"
+    });
+    const report = await synthesize(payload.projectName, payload.outline, analyses);
+    updateAnalysisJob(jobId, {
+      status: "running",
+      stage: "validation",
+      progress: 94,
+      message: "正在校验洞察结论、覆盖状态与逐字引文证据链"
+    });
+    const matrix = payload.documents.map((document, index) => ({
+      document_id: document.id,
+      name: document.name,
+      type: document.type,
+      answers: analyses[index].outline_answers
+    }));
+    updateAnalysisJob(jobId, {
+      status: "completed",
+      stage: "completed",
+      progress: 100,
+      completedDocuments: payload.documents.length,
+      message: "分析完成，逐题矩阵与洞察报告已生成",
+      result: { report, analyses, matrix, questions: payload.questions, models: { map: MAP_MODEL, synthesis: SYNTHESIS_MODEL } }
+    });
+  } catch (error) {
+    updateAnalysisJob(jobId, {
+      status: "failed",
+      stage: "failed",
+      progress: 100,
+      message: "并发分析失败",
+      error: humanizeOpenAIError(error)
+    });
+  }
+}
+
+async function handleAnalysisJobStart(req, res) {
+  if (!API_KEY) return json(res, 503, { error: "尚未连接 AI 服务；请在页面右上角完成临时 API Key 配置。" });
+  cleanupAnalysisJobs();
+  const payload = validateAnalysisPayload(await readJson(req));
+  const id = randomUUID();
+  const job = {
+    id,
+    userId: req.user?.id,
+    status: "queued",
+    stage: "queued",
+    progress: 2,
+    completedDocuments: 0,
+    documentCount: payload.documents.length,
+    currentName: payload.documents[0]?.id || "所选访谈",
+    message: "分析任务已创建，正在进入处理队列",
+    startedAt: Date.now(),
+    updatedAt: Date.now()
+  };
+  analysisJobs.set(id, job);
+  runAnalysisJob(id, payload);
+  return json(res, 202, publicAnalysisJob(job));
+}
+
+function handleAnalysisJobStatus(req, res, id) {
+  cleanupAnalysisJobs();
+  const job = analysisJobs.get(id);
+  if (!job || (job.userId && req.user?.id && job.userId !== req.user.id)) return json(res, 404, { error: "并发分析任务不存在或已过期" });
+  return json(res, 200, publicAnalysisJob(job));
+}
+
 async function handleAnalyze(req, res) {
   if (!API_KEY) return json(res, 503, { error: "尚未连接 AI 服务；请在页面右上角完成临时 API Key 配置。" });
   const payload = validateAnalysisPayload(await readJson(req));
@@ -1556,6 +1704,9 @@ const server = http.createServer(async (req, res) => {
       const apiUser = await requireUser(req, res);
       if (!apiUser) return;
     }
+    if (req.method === "POST" && url.pathname === "/api/analyze/jobs") return await handleAnalysisJobStart(req, res);
+    const analysisJobMatch = url.pathname.match(/^\/api\/analyze\/jobs\/([^/]+)$/);
+    if (req.method === "GET" && analysisJobMatch) return handleAnalysisJobStatus(req, res, analysisJobMatch[1]);
     if (req.method === "POST" && url.pathname === "/api/analyze") return await handleAnalyze(req, res);
     if (req.method === "POST" && url.pathname === "/api/roles/identify") return await handleIdentifyRoles(req, res);
     if (req.method === "POST" && url.pathname === "/api/settings") {

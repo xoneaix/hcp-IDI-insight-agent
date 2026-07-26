@@ -2125,12 +2125,17 @@ function renderMatrixGuideSwitcher() {
 
 function updateMatrixScrollState() {
   const wrap = $("#matrixTableWrap");
-  const hint = $("#matrixScrollHint");
-  if (!wrap || !hint) return;
-  const overflow = wrap.scrollWidth - wrap.clientWidth > 12;
-  const reachedEnd = wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 18;
-  hint.hidden = !overflow || reachedEnd;
-  $(".matrix-panel")?.classList.toggle("scrollable", overflow);
+  const horizontalHint = $("#matrixHorizontalScrollHint");
+  const verticalHint = $("#matrixVerticalScrollHint");
+  if (!wrap || !horizontalHint || !verticalHint) return;
+  const horizontalOverflow = wrap.scrollWidth - wrap.clientWidth > 12;
+  const verticalOverflow = wrap.scrollHeight - wrap.clientHeight > 12;
+  const reachedRight = wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 18;
+  const reachedBottom = wrap.scrollTop + wrap.clientHeight >= wrap.scrollHeight - 18;
+  horizontalHint.hidden = !horizontalOverflow || reachedRight;
+  verticalHint.hidden = !verticalOverflow || reachedBottom;
+  $(".matrix-panel")?.classList.toggle("scrollable-x", horizontalOverflow);
+  $(".matrix-panel")?.classList.toggle("scrollable-y", verticalOverflow);
 }
 
 function renderMatrix() {
@@ -2314,14 +2319,64 @@ function openEvidence(index) {
   $("#evidenceDialog").showModal();
 }
 
-function setPipeline(step, percent, text) {
+function formatAnalysisEta(seconds) {
+  const value = Math.max(0, Math.round(Number(seconds) || 0));
+  if (!value) return "即将完成";
+  if (value < 60) return `预计剩余约 ${Math.max(5, Math.ceil(value / 5) * 5)} 秒`;
+  return `预计剩余约 ${Math.ceil(value / 60)} 分钟`;
+}
+
+function analysisPipelineStep(stage) {
+  if (stage === "completed") return 4;
+  if (stage === "validation") return 3;
+  if (stage === "synthesis") return 2;
+  if (stage === "mapping") return 1;
+  return 0;
+}
+
+function setPipeline(step, percent, text, meta = {}) {
+  const normalizedPercent = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
   $$("#pipeline>div").forEach((element, index) => {
     element.classList.toggle("done", index < step);
     element.classList.toggle("active", index === step);
     element.querySelector("em").textContent = index < step ? "完成" : index === step ? "处理中" : "等待";
   });
-  $("#progressBar").style.width = `${percent}%`;
+  $("#progressBar").style.width = `${normalizedPercent}%`;
+  $("#analysisProgressPercent").textContent = `${normalizedPercent}%`;
+  $("#analysisProgressMeta").textContent = `${meta.completedDocuments || 0} / ${meta.documentCount || 0} 份样本 · ${meta.questionCount || state.questions.length} 个问题`;
+  $("#analysisProgressEta").textContent = formatAnalysisEta(meta.estimatedRemainingSeconds);
+  $("#analysisProgressTrack").setAttribute("aria-valuenow", String(normalizedPercent));
   $("#progressText").textContent = text;
+}
+
+async function pollAnalysisJob(jobId, questionCount) {
+  let transientFailures = 0;
+  while (true) {
+    try {
+      const response = await fetch(`${API_BASE}/api/analyze/jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+      const job = await response.json();
+      if (!response.ok) {
+        const error = new Error(job.error || "读取分析进度失败");
+        error.terminal = response.status < 500;
+        throw error;
+      }
+      transientFailures = 0;
+      setPipeline(analysisPipelineStep(job.stage), job.progress, job.message, { ...job, questionCount });
+      if (job.status === "completed") return job.result;
+      if (job.status === "failed") {
+        const error = new Error(job.error || "并发分析失败");
+        error.terminal = true;
+        throw error;
+      }
+      await delay(900);
+    } catch (error) {
+      if (error.terminal) throw error;
+      transientFailures += 1;
+      if (transientFailures >= 6) throw error;
+      $("#progressText").textContent = `读取进度时短暂中断，正在自动重试 ${transientFailures}/6…`;
+      await delay(900 * transientFailures);
+    }
+  }
 }
 
 async function runAnalysis() {
@@ -2332,35 +2387,37 @@ async function runAnalysis() {
   if (!health) return toast("请先启动 MedVoice 本地服务");
   if (!state.apiConfigured) return openApiSettings(runAnalysis);
   const dialog = $("#analysisDialog");
+  $("#dialogDescription").textContent = `${Math.min(4, selected.length)} 个并发 Agent 正在处理 ${selected.length} 份访谈，并完成跨样本综合。`;
   dialog.showModal();
-  setPipeline(0, 12, "正在执行隐私检查与角色映射…");
+  setPipeline(0, 2, "正在创建并发分析任务…", {
+    completedDocuments: 0,
+    documentCount: selected.length,
+    questionCount: state.questions.length,
+    estimatedRemainingSeconds: Math.max(45, Math.ceil(selected.length / 4) * 20 + 38)
+  });
   try {
-    await new Promise((resolve) => setTimeout(resolve, 280));
-    setPipeline(1, 38, `正在并发分析 ${selected.length} 份访谈 × ${state.questions.length} 个问题…`);
     const guide = activeOutlineGuide();
-    const response = await fetch(`${API_BASE}/api/analyze`, {
+    const response = await fetch(`${API_BASE}/api/analyze/jobs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectName: `${state.projectName} · ${guide?.title || "访谈大纲"}`, outline: state.outlineText, questions: state.questions, documents: selected.map(({ id, name, type, text }) => ({ id, name, type, text })) })
     });
-    setPipeline(2, 70, "正在识别共识、分歧、反例与信息缺口…");
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "分析失败");
+    const job = await response.json();
+    if (!response.ok) throw new Error(job.error || "创建分析任务失败");
+    setPipeline(analysisPipelineStep(job.stage), job.progress, job.message, { ...job, questionCount: state.questions.length });
+    const data = await pollAnalysisJob(job.id, state.questions.length);
     state.report = data.report;
     state.analyses = data.analyses;
     state.matrix = data.matrix;
     state.questions = data.questions;
     saveCurrentProjectWorkspace();
-    setPipeline(3, 93, "正在校验洞察与逐字引文证据链…");
     renderAll();
-    await new Promise((resolve) => setTimeout(resolve, 420));
-    setPipeline(4, 100, "分析完成");
-    await new Promise((resolve) => setTimeout(resolve, 260));
-    dialog.close();
+    await delay(320);
+    if (dialog.open) dialog.close();
     showView("matrix");
     toast("并发分析完成：逐题矩阵与洞察报告已生成");
   } catch (error) {
-    dialog.close();
+    if (dialog.open) dialog.close();
     toast(error.message);
   }
 }
@@ -2647,9 +2704,13 @@ $("#evidenceQuestionSearch").addEventListener("input", (event) => {
   renderEvidenceLedger();
 });
 $("#matrixTableWrap").addEventListener("scroll", updateMatrixScrollState, { passive: true });
-$("#matrixScrollHint").addEventListener("click", () => {
+$("#matrixHorizontalScrollHint").addEventListener("click", () => {
   const wrap = $("#matrixTableWrap");
   wrap.scrollBy({ left: Math.max(320, wrap.clientWidth * 0.72), behavior: "smooth" });
+});
+$("#matrixVerticalScrollHint").addEventListener("click", () => {
+  const wrap = $("#matrixTableWrap");
+  wrap.scrollBy({ top: Math.max(260, wrap.clientHeight * 0.72), behavior: "smooth" });
 });
 $("#copyQuote").addEventListener("click", async () => { if (state.currentQuote) { await navigator.clipboard?.writeText(state.currentQuote); toast("原话与来源已复制"); } });
 $("#copyReport").addEventListener("click", async () => { await navigator.clipboard?.writeText($("#reportPaper").innerText); toast("报告全文已复制"); });

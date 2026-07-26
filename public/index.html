@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" href="assets/medvoice-logo-v4.webp" as="image" type="image/webp" fetchpriority="high" />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=20260726.9" />
+    <link rel="stylesheet" href="style.css?v=20260726.10" />
   </head>
   <body>
     <div class="app-shell">
@@ -220,7 +220,11 @@
             <div><span class="matrix-guide-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4M9 12h6m-6 4h6"/></svg></span><div><div class="eyebrow">DISCUSSION GUIDE VIEW</div><strong>选择访谈大纲</strong><small>矩阵、补访建议和原话证据将同步切换</small></div></div>
             <div class="matrix-guide-tabs" id="matrixGuideTabs"></div>
           </div>
-          <article class="panel matrix-panel"><div class="table-wrap" id="matrixTableWrap"><table class="matrix-table" id="matrixTable"></table></div><button class="matrix-scroll-hint" id="matrixScrollHint" type="button" hidden>→ 向右滑动查看更多问题</button></article>
+          <article class="panel matrix-panel">
+            <div class="table-wrap" id="matrixTableWrap"><table class="matrix-table" id="matrixTable"></table></div>
+            <button class="matrix-scroll-hint matrix-scroll-hint-down" id="matrixVerticalScrollHint" type="button" hidden>↓ 向下滑动查看更多受访者</button>
+            <button class="matrix-scroll-hint matrix-scroll-hint-right" id="matrixHorizontalScrollHint" type="button" hidden><span>向右滑动查看更多问题</span><b>→</b></button>
+          </article>
           <div class="matrix-bottom">
             <article class="panel segment-card matrix-gap-card">
               <div class="panel-head"><div><div class="eyebrow">RESEARCH GAP RADAR</div><h2>信息缺口与补访建议</h2><p>分子为未覆盖样本，分母为样本总数；点击数字可查看待补访编号。</p></div><span class="matrix-panel-icon gap" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3a7 7 0 0 0-4.3 12.5c.8.6 1.3 1.5 1.3 2.5h6c0-1 .5-1.9 1.3-2.5A7 7 0 0 0 12 3Z"/><path d="M9.5 21h5M12 7v4m-2-2h4"/></svg></span></div>
@@ -267,7 +271,12 @@
         <div data-step="2"><i>03</i><span><strong>跨样本共识与差异对齐</strong><small>群体模式 · 反例 · 分群</small></span><em>等待</em></div>
         <div data-step="3"><i>04</i><span><strong>洞察生成与证据校验</strong><small>结论强度 · 引文追溯 · 策略影响</small></span><em>等待</em></div>
       </div>
-      <div class="progress-track"><i id="progressBar"></i></div>
+      <div class="analysis-progress-summary">
+        <div><span>整体处理进度</span><strong id="analysisProgressPercent">0%</strong></div>
+        <p><span id="analysisProgressMeta">0 / 0 份样本</span><span id="analysisProgressEta">正在计算预计时间…</span></p>
+      </div>
+      <div class="progress-track" id="analysisProgressTrack" role="progressbar" aria-label="并发分析整体进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="progressBar"></i></div>
+      <div class="analysis-progress-scale" aria-hidden="true"><span>0</span><span>25</span><span>50</span><span>75</span><span>100%</span></div>
       <div class="dialog-footer"><span id="progressText">准备分析…</span><button class="secondary-button" id="cancelAnalysis">取消</button></div>
     </dialog>
 
@@ -300,6 +309,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="app.js?v=20260726.8"></script>
+    <script type="module" src="app.js?v=20260726.9"></script>
   </body>
 </html>
