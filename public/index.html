@@ -280,35 +280,31 @@
             </div>
           </section>
 
-          <div class="report-deliverables-grid">
-            <section class="delivery-module manuscript-module">
-              <div class="delivery-module-head">
-                <div><div class="eyebrow">01 · DEEP RESEARCH DECK MANUSCRIPT</div><h2>文稿版 Deck</h2><p>逐页给出结论式标题、完整内容、证据链、分析框架、页面叙事任务，以及专业排版与视觉呈现建议。</p></div>
-                <div class="deck-status" id="deckScriptStatus">等待生成</div>
-              </div>
-              <div class="report-research-progress" id="reportResearchProgress" hidden>
-                <div><span id="reportResearchStage">正在准备研究任务</span><strong id="reportResearchPercent">0%</strong></div>
-                <i><b id="reportResearchBar"></b></i>
-                <p><span id="reportResearchMessage">即将启动</span><span id="reportResearchElapsed">已用时 0 秒</span></p>
-                <small>Deep Research 研究公开方法与策略框架；私有访谈原文在无联网工具的独立步骤中完成证据综合与逐页策划。</small>
-              </div>
-              <div class="deck-script-scroll" id="deckScriptContainer"></div>
-            </section>
-
-            <section class="delivery-module deck-builder-module">
-              <div class="delivery-module-head">
-                <div><div class="eyebrow">02 · PROFESSIONAL POWERPOINT</div><h2>Deck 预览</h2><p>依据文稿版 Deck 的内容、方法与视觉指引生成专业 16:9 幻灯片，并保留证据来源与人工复核边界。</p></div>
-                <button class="primary-button" id="exportPpt" disabled><span>↓</span>下载 PPTX</button>
-              </div>
-              <div class="deck-instruction-panel">
-                <label for="deckInstructions"><span>研究者补充要求</span><small>可补充策略重点、叙事结构、视觉偏好或需要谨慎处理的判断。</small></label>
-                <textarea id="deckInstructions" maxlength="1200" rows="4"></textarea>
-                <button class="secondary-button" id="refreshDeckScript" disabled>更新文稿与 Deck</button>
-              </div>
-              <div class="deck-preview-head"><div><span>16:9 DECK PREVIEW</span><strong id="deckPreviewCounter">0 / 0</strong></div><div><button class="icon-button" id="deckPreviewPrev" aria-label="上一页" disabled>←</button><button class="icon-button" id="deckPreviewNext" aria-label="下一页" disabled>→</button></div></div>
+          <section class="delivery-module deck-builder-module">
+            <div class="delivery-module-head deck-builder-head">
+              <div><div class="eyebrow">PROFESSIONAL INSIGHT DECK</div><h2>Deck 预览</h2><p>以研究洞察报告为内容主骨架，将跨场景核心洞察、受访者证据、策略优先级与研究边界转译为专业 16:9 商业演示。</p></div>
+              <div class="deck-builder-actions"><span class="deck-status" id="deckScriptStatus">等待生成</span><button class="primary-button" id="exportPpt" disabled><span>↓</span>下载 PPTX</button></div>
+            </div>
+            <div class="report-research-progress" id="reportResearchProgress" hidden>
+              <div><span id="reportResearchStage">正在准备研究任务</span><strong id="reportResearchPercent">0%</strong></div>
+              <i><b id="reportResearchBar"></b></i>
+              <p><span id="reportResearchMessage">即将启动</span><span id="reportResearchElapsed">已用时 0 秒</span></p>
+              <small>Deep Research 研究公开方法与策略框架；私有访谈原文在无联网工具的独立步骤中完成证据综合与专业 Deck 规划。</small>
+            </div>
+            <div class="deck-instruction-panel">
+              <label for="deckInstructions"><span>研究者补充要求</span><small>可补充策略重点、叙事结构、视觉偏好或需要谨慎处理的判断。</small></label>
+              <textarea id="deckInstructions" maxlength="1200" rows="3"></textarea>
+              <button class="secondary-button" id="refreshDeckScript" disabled>更新洞察报告与 Deck</button>
+            </div>
+            <div class="deck-preview-head"><div><span>16:9 DECK PREVIEW</span><strong id="deckPreviewCounter">0 / 0</strong></div><div><button class="icon-button" id="deckPreviewPrev" aria-label="上一页" disabled>←</button><button class="icon-button" id="deckPreviewNext" aria-label="下一页" disabled>→</button></div></div>
+            <div class="deck-preview-workspace">
               <div class="deck-preview-shell"><div class="deck-preview-track" id="deckPreviewTrack"></div></div>
-            </section>
-          </div>
+              <aside class="deck-thumbnail-panel" aria-label="全部幻灯片页面">
+                <div><strong>全部页面</strong><span id="deckThumbnailCount">0 页</span></div>
+                <div class="deck-thumbnail-list" id="deckPreviewThumbnails"></div>
+              </aside>
+            </div>
+          </section>
         </section>
 
         <footer><span>MedVoice Insight Prototype · 仅用于研究洞察，不构成医学诊断或治疗建议</span><span>所有 AI 结论应由研究、医学与合规人员复核</span></footer>
