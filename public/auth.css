@@ -42,3 +42,15 @@
 :root{--font-digital:"DM Mono","Noto Sans SC",Arial,sans-serif}
 body,button,input,textarea,select,option{font-family:var(--font-digital)}
 body,body *{font-variant-numeric:tabular-nums slashed-zero!important;font-feature-settings:"zero" 1,"tnum" 1!important}
+
+/* Password visibility control: familiar interaction with a quiet, in-field treatment. */
+.field>label{display:block;font-size:11px;font-weight:600;margin-bottom:7px}
+.password-input-wrap{position:relative}
+.password-input-wrap input{padding-right:52px}
+.password-visibility-toggle{position:absolute;top:50%;right:6px;width:36px;height:36px;padding:0;transform:translateY(-50%);display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:#71847d;cursor:pointer;transition:color .18s,background .18s,box-shadow .18s}
+.password-visibility-toggle:hover{color:var(--green);background:#edf4f0}
+.password-visibility-toggle:focus-visible{outline:0;color:var(--green);background:#edf4f0;box-shadow:0 0 0 3px rgba(36,92,77,.12)}
+.password-visibility-toggle svg{position:absolute;width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.password-visibility-toggle .eye-closed{display:none}
+.password-visibility-toggle.is-visible .eye-open{display:none}
+.password-visibility-toggle.is-visible .eye-closed{display:block}

@@ -38,6 +38,17 @@ async function verifySessionAfterLogin() {
 
 document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => showTab(button.dataset.tab)));
 
+$("#toggleLoginPassword").addEventListener("click", (event) => {
+  const input = $("#loginPassword");
+  const button = event.currentTarget;
+  const isVisible = input.type === "text";
+  input.type = isVisible ? "password" : "text";
+  button.classList.toggle("is-visible", !isVisible);
+  button.setAttribute("aria-pressed", String(!isVisible));
+  button.setAttribute("aria-label", isVisible ? "显示密码" : "隐藏密码");
+  button.title = isVisible ? "显示密码" : "隐藏密码";
+});
+
 $("#loginForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   message("正在验证…");
