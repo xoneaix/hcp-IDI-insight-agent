@@ -150,7 +150,9 @@ const state = {
   evidenceQuestionIndex: 0,
   evidenceRowIndex: 0,
   evidenceSearch: "",
-  expandedGapQuestionIndex: null
+  expandedGapQuestionIndex: null,
+  overviewGuideFilter: "all",
+  overviewInsightFilter: "all"
 };
 let outlineRenameGuideId = "";
 let deckSnapshotGeneration = 0;
@@ -332,6 +334,8 @@ function loadCurrentProjectWorkspace() {
     ? data.activeOutlineGuideId
     : state.outlineGuides[0].id;
   state.outlineUploadMode = "add";
+  state.overviewGuideFilter = "all";
+  state.overviewInsightFilter = "all";
   state.reportWorkspace = normalizedReportWorkspace(data.reportWorkspace);
   applyOutlineGuideToState();
 }
@@ -2204,49 +2208,116 @@ function renderReadiness() {
   $("#runOutlineAnalysis").disabled = !isReady;
 }
 
-function renderOverview() {
-  const report = state.report;
-  const selectedCount = state.interviews.length;
-  const transcribed = state.interviews.filter((item) => item.text).length;
-  const hcpCount = state.interviews.filter((item) => normalizeRespondentType(item.type) === "HCP").length;
-  const patientCount = state.interviews.filter((item) => normalizeRespondentType(item.type) === "Patient").length;
-  $("#metricInterviews").innerHTML = `${state.matrix.length || 0} <em>份</em>`;
-  $("#metricTypes").textContent = selectedCount ? `${hcpCount} HCP${patientCount ? ` · ${patientCount} Patient` : ""}` : "等待导入资料";
-  $("#metricTranscribed").innerHTML = `${transcribed} <em>份</em>`;
-  $("#metricQuestions").innerHTML = `${state.questions.length}<em>题</em>`;
-  $("#metricInsights").innerHTML = `${report?.top_insights?.length || 0} <em>项</em>`;
-  renderInsights();
-  renderSignals();
-  const contradictionCount = state.analyses.reduce((sum, item) => sum + (item.contradictions?.length || 0), 0);
-  $(".contradiction-card h3").textContent = report ? `AI 发现 ${contradictionCount} 组关键分歧` : "等待识别跨样本分歧";
-  $(".contradiction-card p").textContent = report ? "分歧与反例不会被平均结论掩盖，可在问题矩阵中逐项核验。" : "完成大纲驱动分析后，将在这里显示观点分层与反例。";
+function overviewAnalyzedGuides() {
+  syncActiveOutlineGuideFromState();
+  return state.outlineGuides.filter((guide) => guide.report && Array.isArray(guide.matrix) && guide.matrix.length);
 }
 
-function renderInsights(filter = "all") {
+function overviewSelectedGuides() {
+  const guides = overviewAnalyzedGuides();
+  if (state.overviewGuideFilter === "all") return guides;
+  const selected = guides.find((guide) => guide.id === state.overviewGuideFilter);
+  if (selected) return [selected];
+  state.overviewGuideFilter = "all";
+  return guides;
+}
+
+function renderOverviewScope() {
+  const container = $("#overviewGuideTabs");
+  const analyzed = overviewAnalyzedGuides();
+  const completedIds = new Set(analyzed.map((guide) => guide.id));
+  const allActive = state.overviewGuideFilter === "all";
+  const allSamples = analyzed.reduce((sum, guide) => sum + guide.matrix.length, 0);
+  container.innerHTML = `<button class="overview-guide-tab all ${allActive ? "active" : ""}" type="button" data-overview-guide="all" role="radio" aria-checked="${allActive}">
+      <span>ALL</span><div><strong>全部场景</strong><small>${analyzed.length} 份大纲 · ${allSamples} 个场景样本</small></div><em>${allActive ? "当前范围" : "跨场景"}</em>
+    </button>${state.outlineGuides.map((guide, index) => {
+      const ready = completedIds.has(guide.id);
+      const active = state.overviewGuideFilter === guide.id;
+      return `<button class="overview-guide-tab ${active ? "active" : ""}" type="button" data-overview-guide="${escapeHTML(guide.id)}" role="radio" aria-checked="${active}" ${ready ? "" : "disabled"}>
+        <span>DG${String(index + 1).padStart(2, "0")}</span><div><strong title="${escapeHTML(guide.title)}">${escapeHTML(guide.title)}</strong><small>${guide.matrix?.length || 0} 份样本 · ${guide.questions?.length || 0} 个问题</small></div><em>${ready ? active ? "当前范围" : "查看洞察" : "待分析"}</em>
+      </button>`;
+    }).join("")}`;
+  $$("[data-overview-guide]", container).forEach((button) => button.addEventListener("click", () => {
+    state.overviewGuideFilter = button.dataset.overviewGuide;
+    renderOverview();
+  }));
+}
+
+function overviewInsightEntries(guides = overviewSelectedGuides()) {
+  return guides.flatMap((guide) => (guide.report?.top_insights || []).map((insight, insightIndex) => ({
+    guide,
+    insight,
+    insightIndex,
+    guideIndex: Math.max(0, state.outlineGuides.findIndex((item) => item.id === guide.id))
+  })));
+}
+
+function renderOverview() {
+  renderOverviewScope();
+  const guides = overviewSelectedGuides();
+  const scopedRows = guides.flatMap((guide) => guide.matrix || []);
+  const scopedQuestions = guides.reduce((sum, guide) => sum + (guide.questions?.length || 0), 0);
+  const scopedInsights = overviewInsightEntries(guides);
+  const hasScopedAnalysis = guides.length > 0;
+  const transcribed = hasScopedAnalysis ? scopedRows.length : state.interviews.filter((item) => item.text).length;
+  const typeSource = hasScopedAnalysis ? scopedRows : state.interviews;
+  const hcpCount = typeSource.filter((item) => normalizeRespondentType(item.type) === "HCP").length;
+  const patientCount = typeSource.filter((item) => normalizeRespondentType(item.type) === "Patient").length;
+  const scopeLabel = guides.length > 1 ? `${guides.length} 个场景合并` : guides[0]?.title || "全部研究资料";
+  $("#metricInterviews").innerHTML = `${hasScopedAnalysis ? scopedRows.length : state.matrix.length || 0} <em>份</em>`;
+  $("#metricTypes").textContent = typeSource.length ? `${hcpCount} HCP${patientCount ? ` · ${patientCount} Patient` : ""}` : "等待导入资料";
+  $("#metricTranscribed").innerHTML = `${transcribed} <em>份</em>`;
+  $("#metricTranscribed").nextElementSibling.textContent = hasScopedAnalysis ? `当前范围 · ${scopeLabel}` : "支持中文与 English";
+  $("#metricQuestions").innerHTML = `${hasScopedAnalysis ? scopedQuestions : state.questions.length}<em>题</em>`;
+  $("#metricQuestions").nextElementSibling.textContent = hasScopedAnalysis ? "对应所选 Discussion Guide" : "等待导入研究大纲";
+  $("#metricInsights").innerHTML = `${scopedInsights.length} <em>项</em>`;
+  $("#metricInsights").nextElementSibling.textContent = guides.length > 1 ? "跨场景汇总并保留来源" : hasScopedAnalysis ? "当前场景已验证洞察" : "分析后自动生成";
+  renderInsights();
+  renderSignals();
+  const contradictionCount = guides.reduce((sum, guide) => sum + (guide.analyses || []).reduce((guideSum, item) => guideSum + (item.contradictions?.length || 0), 0), 0);
+  const hasReport = guides.some((guide) => guide.report);
+  $(".contradiction-card h3").textContent = hasReport
+    ? guides.length > 1 ? `跨场景保留 ${contradictionCount} 组分歧与反例` : `AI 发现 ${contradictionCount} 组关键分歧`
+    : "等待识别跨样本分歧";
+  $(".contradiction-card p").textContent = hasReport
+    ? guides.length > 1
+      ? "首购与复购的共同结论、场景差异和反例均保留来源，可进入矩阵逐项核验。"
+      : `当前仅呈现“${guides[0].title}”的观点分层与反例，避免被其他场景平均。`
+    : "完成大纲驱动分析后，将在这里显示观点分层与反例。";
+}
+
+function renderInsights(filter = state.overviewInsightFilter) {
+  state.overviewInsightFilter = filter;
   const list = $("#insightList");
-  if (!state.report?.top_insights?.length) {
-    list.innerHTML = '<div class="empty-dashboard"><div><strong>暂无洞察结果</strong>先导入访谈、完成转录，再进入“大纲驱动·并发分析”。</div></div>';
+  const entries = overviewInsightEntries();
+  if (!entries.length) {
+    list.innerHTML = '<div class="empty-dashboard"><div><strong>暂无洞察结果</strong>完成任一 Discussion Guide 的样本绑定与并发分析后，即可在这里按场景查看。</div></div>';
     return;
   }
-  const insights = state.report.top_insights.filter((item) => filter === "all" || (filter === "high" && item.confidence >= 85) || (filter === "action" && item.implication));
-  list.innerHTML = insights.map((item, index) => `<button class="insight-item" data-insight="${state.report.top_insights.indexOf(item)}"><span class="insight-rank">${String(index + 1).padStart(2, "0")}</span><span><h3>${escapeHTML(item.title)}</h3><p>${escapeHTML(item.insight)}</p><span class="insight-meta"><em class="confidence">置信度 ${item.confidence}%</em><em class="evidence-count">${item.evidence?.length || 0} 条原话</em></span></span><span class="score-ring" style="--score:${item.confidence}"><strong>${item.confidence}</strong></span></button>`).join("");
-  $$(".insight-item").forEach((button) => button.addEventListener("click", () => openEvidence(+button.dataset.insight)));
+  const filtered = entries.filter(({ insight }) => filter === "all" || (filter === "high" && insight.confidence >= 85) || (filter === "action" && insight.implication));
+  list.innerHTML = filtered.map(({ guide, guideIndex, insight, insightIndex }, index) => `<button class="insight-item" data-insight="${insightIndex}" data-insight-guide="${escapeHTML(guide.id)}"><span class="insight-rank">${String(index + 1).padStart(2, "0")}</span><span><span class="insight-scenario">DG${String(guideIndex + 1).padStart(2, "0")} · ${escapeHTML(guide.title)}</span><h3>${escapeHTML(insight.title)}</h3><p>${escapeHTML(insight.insight)}</p><span class="insight-meta"><em class="confidence">置信度 ${insight.confidence}%</em><em class="evidence-count">${insight.evidence?.length || 0} 条原话</em></span></span><span class="score-ring" style="--score:${insight.confidence}"><strong>${insight.confidence}</strong></span></button>`).join("");
+  $$(".insight-item").forEach((button) => button.addEventListener("click", () => openEvidence(+button.dataset.insight, button.dataset.insightGuide)));
 }
 
 function renderSignals() {
   const chart = $("#signalChart");
-  if (!state.matrix.length || !state.questions.length) {
-    chart.innerHTML = '<div class="empty-compact">分析后显示各问题的完整覆盖、部分覆盖与未覆盖比例。</div>';
+  const guides = overviewSelectedGuides();
+  if (!guides.length) {
+    chart.innerHTML = '<div class="empty-compact">分析后显示各场景问题的完整覆盖、部分覆盖与未覆盖比例。</div>';
     return;
   }
-  chart.innerHTML = state.questions.slice(0, 8).map((question, index) => {
-    const answers = state.matrix.map((row) => row.answers?.[index]).filter(Boolean);
-    const total = Math.max(answers.length, 1);
-    const full = answers.filter((item) => item.coverage === "完整覆盖").length;
-    const partial = answers.filter((item) => item.coverage === "部分覆盖").length;
-    const missing = total - full - partial;
-    return `<div class="signal-row"><span title="${escapeHTML(question)}">Q${index + 1} ${escapeHTML(question)}</span><span class="stack-bar"><i class="positive" style="width:${full / total * 100}%"></i><i class="mid" style="width:${partial / total * 100}%"></i><i class="negative" style="width:${missing / total * 100}%"></i></span><strong>${full}/${total}</strong></div>`;
-  }).join("");
+  const perGuideLimit = guides.length > 1 ? Math.max(2, Math.floor(8 / guides.length)) : 8;
+  const rows = guides.flatMap((guide) => {
+    const guideIndex = Math.max(0, state.outlineGuides.findIndex((item) => item.id === guide.id));
+    return (guide.questions || []).slice(0, perGuideLimit).map((question, questionIndex) => {
+      const total = Math.max(guide.matrix?.length || 0, 1);
+      const answers = (guide.matrix || []).map((row) => row.answers?.[questionIndex]).filter(Boolean);
+      const full = answers.filter((item) => item.coverage === "完整覆盖").length;
+      const partial = answers.filter((item) => item.coverage === "部分覆盖").length;
+      return { guideIndex, question, questionIndex, total, full, partial, missing: Math.max(0, total - full - partial) };
+    });
+  }).slice(0, 8);
+  chart.innerHTML = rows.map(({ guideIndex, question, questionIndex, total, full, partial, missing }) => `<div class="signal-row"><span title="${escapeHTML(question)}"><b>DG${String(guideIndex + 1).padStart(2, "0")} · Q${String(questionIndex + 1).padStart(2, "0")}</b>${escapeHTML(question)}</span><span class="stack-bar"><i class="positive" style="width:${full / total * 100}%"></i><i class="mid" style="width:${partial / total * 100}%"></i><i class="negative" style="width:${missing / total * 100}%"></i></span><strong>${full}/${total}</strong></div>`).join("");
 }
 
 function renderMatrixGuideSwitcher() {
@@ -2881,10 +2952,13 @@ function selectDeckPreview(index) {
   renderDeckPreview(presentationScript);
 }
 
-function openEvidence(index) {
-  const insight = state.report?.top_insights?.[index];
+function openEvidence(index, guideId = state.activeOutlineGuideId) {
+  syncActiveOutlineGuideFromState();
+  const guide = state.outlineGuides.find((item) => item.id === guideId);
+  const insight = guide?.report?.top_insights?.[index];
   if (!insight) return;
-  $("#evidenceContent").innerHTML = `<div class="eyebrow">INSIGHT EVIDENCE CHAIN</div><h2>${escapeHTML(insight.title)}</h2><p class="evidence-summary">${escapeHTML(insight.insight)}</p><div class="impact-box"><strong>策略影响</strong><br>${escapeHTML(insight.implication)}</div><div class="eyebrow">VERBATIM EVIDENCE · ${insight.evidence?.length || 0}</div>${(insight.evidence || []).map((evidence) => `<blockquote>“${escapeHTML(evidence.quote)}”<small>${escapeHTML(evidence.document_id)} · 已回链至原始笔录</small></blockquote>`).join("")}<p class="evidence-summary">置信度 ${insight.confidence}% · ${insight.prevalence} 份访谈支持。样本覆盖不代表总体发生率。</p>`;
+  const guideIndex = Math.max(0, state.outlineGuides.findIndex((item) => item.id === guideId));
+  $("#evidenceContent").innerHTML = `<div class="eyebrow">INSIGHT EVIDENCE CHAIN · DG${String(guideIndex + 1).padStart(2, "0")}</div><span class="evidence-guide-source">${escapeHTML(guide.title)}</span><h2>${escapeHTML(insight.title)}</h2><p class="evidence-summary">${escapeHTML(insight.insight)}</p><div class="impact-box"><strong>策略影响</strong><br>${escapeHTML(insight.implication)}</div><div class="eyebrow">VERBATIM EVIDENCE · ${insight.evidence?.length || 0}</div>${(insight.evidence || []).map((evidence) => `<blockquote>“${escapeHTML(evidence.quote)}”<small>${escapeHTML(evidence.document_id)} · 已回链至原始笔录</small></blockquote>`).join("")}<p class="evidence-summary">置信度 ${insight.confidence}% · ${insight.prevalence} 份访谈支持。样本覆盖不代表总体发生率。</p>`;
   $("#evidenceDialog").showModal();
 }
 
@@ -3170,14 +3244,16 @@ function renderAll() {
 
 $$(".nav-item").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
 $$("[data-view-jump]").forEach((button) => button.addEventListener("click", () => showView(button.dataset.viewJump)));
-$$("[data-insight-filter]").forEach((button) => button.addEventListener("click", () => { $$("[data-insight-filter]").forEach((item) => item.classList.remove("active")); button.classList.add("active"); renderInsights(button.dataset.insightFilter); }));
+$$("[data-insight-filter]").forEach((button) => button.addEventListener("click", () => {
+  state.overviewInsightFilter = button.dataset.insightFilter;
+  $$("[data-insight-filter]").forEach((item) => item.classList.toggle("active", item.dataset.insightFilter === state.overviewInsightFilter));
+  renderInsights();
+}));
 $$("dialog .dialog-close").forEach((button) => button.addEventListener("click", () => button.closest("dialog").close()));
 document.addEventListener("click", (event) => { if (!event.target.closest(".confidence-info-button") && !event.target.closest("#confidenceFloatingPopover")) hideConfidencePopover(); });
 window.addEventListener("scroll", hideConfidencePopover, true);
 window.addEventListener("resize", hideConfidencePopover);
 $("#cancelAnalysis").addEventListener("click", () => $("#analysisDialog").close());
-$("#goCollect").addEventListener("click", () => showView("transcripts"));
-$("#goAnalyze").addEventListener("click", () => showView("outline"));
 $("#uploadButton").addEventListener("click", () => $("#fileInput").click());
 $("#browseButton")?.addEventListener("click", (event) => { event.stopPropagation(); $("#fileInput").click(); });
 $("#uploadZone").addEventListener("click", (event) => { if (!event.target.closest("button")) $("#fileInput").click(); });
