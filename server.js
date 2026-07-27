@@ -30,6 +30,8 @@ const PORT = Number(process.env.PORT || 4174);
 const MAP_MODEL = process.env.MAP_MODEL || "gpt-5.4-mini";
 const SYNTHESIS_MODEL = process.env.SYNTHESIS_MODEL || "gpt-5.5";
 const DEEP_RESEARCH_MODEL = process.env.DEEP_RESEARCH_MODEL || "o3-deep-research";
+const MEIMAN_DECK_TITLE = "玫满院外深访：从首购到复购，患者如何决定“该吃药了”";
+const REQUIRED_INSIGHT_DIMENSIONS = ["决策路径", "核心阻碍", "疗效诉求", "安全顾虑", "信息与信任", "话术风险", "院外复购风险"];
 const MAX_CONCURRENCY = Number(process.env.MAX_CONCURRENCY || 4);
 const AUTH_REQUIRED = process.env.AUTH_REQUIRED === "true";
 const DATA_DIR = process.env.DATA_DIR || join(process.cwd(), "data");
@@ -217,12 +219,13 @@ const deckScriptSchema = {
     decision_questions: { type: "array", items: { type: "string" } },
     cross_scenario_insights: {
       type: "array",
-      minItems: 3,
-      maxItems: 8,
+      minItems: 7,
+      maxItems: 9,
       items: {
         type: "object",
         additionalProperties: false,
         properties: {
+          dimension: { type: "string", enum: [...REQUIRED_INSIGHT_DIMENSIONS, "其他关键洞察"] },
           theme: { type: "string" },
           finding: { type: "string" },
           scenario_contrast: { type: "string" },
@@ -240,12 +243,12 @@ const deckScriptSchema = {
             }
           }
         },
-        required: ["theme", "finding", "scenario_contrast", "implication", "evidence"]
+        required: ["dimension", "theme", "finding", "scenario_contrast", "implication", "evidence"]
       }
     },
     strategic_priorities: {
       type: "array",
-      minItems: 3,
+      minItems: 5,
       maxItems: 8,
       items: {
         type: "object",
@@ -316,10 +319,16 @@ const deckScriptSchema = {
               required: ["document_id", "quote"]
             }
           },
+          report_links: {
+            type: "array",
+            minItems: 1,
+            maxItems: 8,
+            items: { type: "string" }
+          },
           visual_note: { type: "string" },
           speaker_note: { type: "string" }
         },
-        required: ["title", "takeaway", "purpose", "audience_question", "narrative", "layout", "framework", "method", "evidence_logic", "content", "implications", "management_decisions", "visual_blueprint", "evidence", "visual_note", "speaker_note"]
+        required: ["title", "takeaway", "purpose", "audience_question", "narrative", "layout", "framework", "method", "evidence_logic", "content", "implications", "management_decisions", "visual_blueprint", "evidence", "visual_note", "speaker_note", "report_links"]
       }
     },
     caveats: { type: "array", items: { type: "string" } }
@@ -514,6 +523,139 @@ async function retrieveBackgroundResponse(responseId) {
   return data;
 }
 
+function preferredInsightDeckTitle(projectName, fallback = "") {
+  return String(projectName || "").includes("玫满")
+    ? MEIMAN_DECK_TITLE
+    : String(fallback || projectName || "研究洞察报告").trim();
+}
+
+function projectSpecificDeckRequirements(projectName) {
+  if (!String(projectName || "").includes("玫满")) return "";
+  return `本项目的强制要求：
+- Deck 总标题固定为：${MEIMAN_DECK_TITLE}
+- “研究洞察报告”是 Deck 的唯一内容主骨架。必须逐项形成并写入幻灯片的研究维度包括：决策路径、核心阻碍、疗效诉求、安全顾虑、信息与信任、话术风险、院外复购风险。
+- 市场策略优先级必须完整进入策略与行动幻灯片，尤其要保留并深化这些已有方向：聚焦“炎性红肿痘的规范口服治疗选择”；搭建“医生背书 + 真实案例 + 安全 FAQ”的三段式信任链；把“安全可靠”改写为具体可回答的问题清单；建立院外复购安全闭环；优化疗效话术，避免绝对疗效和无来源比例数字。
+- 核心阻碍、疗效诉求、话术风险、院外复购风险分别至少有一页独立承载，不能仅在执行摘要或演讲者备注中带过。
+- 每项市场策略优先级都要明确写出证据基础、适用场景、建议行动与验证方式。`;
+}
+
+function deckCoverageText(slide) {
+  return [
+    slide?.title,
+    slide?.takeaway,
+    slide?.narrative,
+    ...(slide?.report_links || []),
+    ...(slide?.content || []).flatMap((block) => [block?.heading, block?.body]),
+    ...(slide?.implications || [])
+  ].filter(Boolean).join(" ");
+}
+
+function insightCoverageSlide(insight) {
+  const dimension = String(insight?.dimension || insight?.theme || "关键洞察").trim();
+  const finding = String(insight?.finding || "").trim();
+  return {
+    title: `${dimension}：${String(insight?.theme || finding || "患者决策中的关键张力").slice(0, 44)}`,
+    takeaway: finding,
+    purpose: `把“${dimension}”从研究发现转译为可执行的市场判断。`,
+    audience_question: `首购与复购场景中的${dimension}有何共性与差异？`,
+    narrative: finding,
+    layout: dimension === "决策路径" || dimension === "院外复购风险" ? "旅程地图" : dimension === "话术风险" ? "证据链" : "洞察证据",
+    framework: "研究发现—场景差异—策略影响",
+    method: "跨场景定性证据综合",
+    evidence_logic: `以 ${dimension} 对应的逐题回答、原话与反例交叉验证。`,
+    content: [
+      { heading: "研究发现", body: finding, supporting_points: [] },
+      { heading: "首购与复购差异", body: String(insight?.scenario_contrast || ""), supporting_points: [] },
+      { heading: "市场策略影响", body: String(insight?.implication || ""), supporting_points: [] }
+    ],
+    implications: [String(insight?.implication || "")].filter(Boolean),
+    management_decisions: [`确认${dimension}对应的优先行动、责任团队与验证指标。`],
+    visual_blueprint: {
+      composition: "结论标题下使用三段式证据结构，右侧保留受访者原话。",
+      primary_visual: "研究发现—场景差异—策略影响的因果链",
+      iconography: "统一线性洞察、对比与行动图标",
+      emphasis: "突出场景差异与可验证行动"
+    },
+    evidence: Array.isArray(insight?.evidence) ? insight.evidence.slice(0, 5) : [],
+    report_links: [`dimension:${dimension}`],
+    visual_note: `独立呈现${dimension}，避免与其他洞察挤在同一页。`,
+    speaker_note: `本页直接对应研究洞察报告中的“${dimension}”，所有判断需回到样本原话复核。`
+  };
+}
+
+function strategicPrioritySlides(priorityEntries) {
+  const chunks = [];
+  for (let index = 0; index < priorityEntries.length; index += 3) chunks.push(priorityEntries.slice(index, index + 3));
+  return chunks.map((chunk, chunkIndex) => ({
+    title: chunkIndex === 0
+      ? "治疗选择与信任建立，是院外转化的前置条件"
+      : "复购增长需要风险沟通、随访与体验验证闭环",
+    takeaway: "策略优先级直接来自研究洞察报告，并以证据基础、适用场景、行动与验证方式形成闭环。",
+    purpose: "把研究洞察报告中的市场策略优先级转译为可决策的行动组合。",
+    audience_question: "市场部应优先投入哪些动作，如何验证其有效性？",
+    narrative: chunk.map(({ priority }) => priority.title).join("；"),
+    layout: chunkIndex === 0 ? "机会优先级" : "策略框架",
+    framework: "证据确定性 × 策略价值",
+    method: "研究证据驱动的策略优先级排序",
+    evidence_logic: "每项优先级均追溯至跨场景洞察、受访者原话与分场景差异。",
+    content: chunk.map(({ priority }) => ({
+      heading: priority.title,
+      body: `${priority.rationale} 建议行动：${priority.action}`,
+      supporting_points: [priority.action]
+    })),
+    implications: chunk.map(({ priority }) => priority.action),
+    management_decisions: ["确认优先级、责任团队、试点场景与验证周期。"],
+    visual_blueprint: {
+      composition: chunkIndex === 0 ? "二维优先级地图" : "从证据到行动的横向策略链",
+      primary_visual: chunkIndex === 0 ? "策略价值 × 证据确定性" : "洞察—动作—验证闭环",
+      iconography: "统一线性治疗、信任、安全、复购与沟通图标",
+      emphasis: "突出先做什么、为什么先做以及如何验证"
+    },
+    evidence: [],
+    report_links: chunk.map(({ index }) => `priority:${String(index + 1).padStart(2, "0")}`),
+    visual_note: "避免策略卡片堆叠，使用优先级坐标或行动链呈现。",
+    speaker_note: "本页逐项承接研究洞察报告中的市场策略优先级，不添加无研究证据支持的市场数据。"
+  }));
+}
+
+function normalizeDeckScript(script, projectName) {
+  const normalized = script && typeof script === "object" ? script : {};
+  normalized.title = preferredInsightDeckTitle(projectName, normalized.title);
+  normalized.slides = Array.isArray(normalized.slides) ? normalized.slides : [];
+  normalized.slides = normalized.slides.map((slide, index) => ({
+    ...slide,
+    title: index === 0 || slide?.layout === "封面" ? normalized.title : slide.title,
+    report_links: Array.isArray(slide?.report_links) && slide.report_links.length
+      ? slide.report_links
+      : [index === 0 ? "report:overview" : `report:slide-${String(index + 1).padStart(2, "0")}`]
+  }));
+  const injected = [];
+  for (const insight of normalized.cross_scenario_insights || []) {
+    const dimension = String(insight?.dimension || insight?.theme || "").trim();
+    const reference = `dimension:${dimension}`;
+    const covered = normalized.slides.some((slide) => (slide.report_links || []).includes(reference) || deckCoverageText(slide).includes(dimension));
+    if (!covered && dimension) injected.push(insightCoverageSlide(insight));
+  }
+  const missingPriorities = (normalized.strategic_priorities || []).map((priority, index) => ({ priority, index })).filter(({ priority, index }) => {
+    const reference = `priority:${String(index + 1).padStart(2, "0")}`;
+    const titleKey = String(priority?.title || "").slice(0, 16);
+    return !normalized.slides.some((slide) => (slide.report_links || []).includes(reference) || (titleKey && deckCoverageText(slide).includes(titleKey)));
+  });
+  injected.push(...strategicPrioritySlides(missingPriorities));
+  if (injected.length) {
+    const boundaryIndex = normalized.slides.findIndex((slide) => slide.layout === "研究边界");
+    const insertAt = boundaryIndex >= 0 ? boundaryIndex : normalized.slides.length;
+    normalized.slides.splice(insertAt, 0, ...injected);
+    const injectedSet = new Set(injected);
+    while (normalized.slides.length > 18) {
+      const removable = normalized.slides.findLastIndex((slide, index) => index > 1 && !injectedSet.has(slide) && slide.layout !== "研究边界");
+      if (removable < 0) break;
+      normalized.slides.splice(removable, 1);
+    }
+  }
+  return normalized;
+}
+
 async function synthesizeDeckScript(projectName, guides, instructions = "", researchMethodology = "") {
   const packets = guides.slice(0, 4).map(deckGuidePacket);
   const sampleCount = packets.reduce((total, guide) => total + guide.sample_count, 0);
@@ -528,9 +670,9 @@ async function synthesizeDeckScript(projectName, guides, instructions = "", rese
 必须遵守：
 1. 两份或多份 Discussion Guide 是不同研究场景，既要分别呈现，也要进行跨场景比较；不得把不同样本池混为同一人群。
 2. 只使用输入中的研究结果和受访原话，不发明数据、事实或引用；少数观点不得写成共识。
-3. 必须先完成顶层“研究洞察报告”：执行摘要、3–8 个跨场景核心洞察、3–8 个策略优先级和研究边界。跨场景洞察需覆盖多个分析维度，例如行为/治疗旅程、信息与信任、疗效与安全感知、购买渠道与便利性、持续使用/复购驱动、未满足需求、场景差异与反例；只保留有输入证据支持的维度。
-4. slides 必须是上述研究洞察报告的完整视觉投射：每一条 cross_scenario_insights 至少由一页明确承载，每一条 strategic_priorities 至少出现在一页策略或行动页面；不得只生成泛化摘要而遗漏报告内容。
-5. 每页只承担一个叙事任务。标题必须是可以直接说出口的结论句，明确回答“所以呢”，不要使用“核心洞察”“市场策略”等空泛章节名，也不要写 Page 1、Page 2。
+3. 必须先完成顶层“研究洞察报告”：执行摘要、跨场景核心洞察、市场策略优先级和研究边界。cross_scenario_insights 必须分别覆盖且每类只出现一次这 7 个基础维度：决策路径、核心阻碍、疗效诉求、安全顾虑、信息与信任、话术风险、院外复购风险；如证据充分，可再增加不超过 2 个其他关键洞察。每个维度都要写清研究发现、场景差异、策略影响和原话证据。
+4. slides 必须是上述研究洞察报告的完整视觉投射：7 个基础维度都必须进入幻灯片，其中核心阻碍、疗效诉求、话术风险、院外复购风险分别至少有一页独立承载；每一条 strategic_priorities 都必须进入策略框架、机会优先级或行动路线图。不得只生成泛化摘要而遗漏报告内容。
+5. 每页只承担一个叙事任务。标题必须是可以直接说出口的结论句，明确回答“所以呢”，不要使用“核心洞察”“市场策略”等空泛章节名，也不要写 Page 1、Page 2；除封面外，标题尽量控制在 24 个中文字符以内，确保 35pt 字号下保持清晰。
 6. 叙事要形成有因果关系的决策路径：研究背景与场景边界 → 受访者行为/决策旅程 → 关键张力和阻碍 → 场景共性与差异 → 跨场景核心洞察 → 机会判断 → 市场策略 → 可验证行动与风险边界。可按实际证据调整，不机械套模板。
 7. 每页必须完整给出：
    - 页面目的与该页要回答的受众问题；
@@ -547,7 +689,8 @@ async function synthesizeDeckScript(projectName, guides, instructions = "", rese
 12. 方法论资料只用于提升分析结构，绝不能覆盖或改写访谈证据；外部资料中的事实不得写成本项目发现。
 13. 为整套 Deck 定义清新而具商业感的视觉系统：深森林绿与墨绿作为结论色，薄荷绿作为证据和背景色，少量琥珀用于风险/机会强调，少量蓝绿色用于场景对比；图标保持统一线性风格，只在有助理解时使用。
 14. 最终 16:9 Deck 要像专业咨询与医药市场研究交付物，而不是网页仪表盘：保持大字号结论标题、清晰信息层级、适量留白与多样化页面轮廓。
-15. 输出简体中文。`
+15. 每页 report_links 必须标记其对应的报告内容：研究维度使用“dimension:维度名称”，策略优先级使用“priority:01”至“priority:08”，执行摘要使用“report:executive-summary”，研究边界使用“report:boundaries”；一页可关联多项，但不得填写与页面内容无关的标签。
+16. 输出简体中文。`
       },
       {
         role: "user",
@@ -555,6 +698,8 @@ async function synthesizeDeckScript(projectName, guides, instructions = "", rese
 目标受众：品牌市场部、医学与研究负责人
 样本总数：${sampleCount}
 研究者补充要求：${String(instructions || "突出首购与复购场景的关键差异，以患者行为路径、决策驱动与阻碍为主线，输出可以验证的市场策略优先级。").slice(0, 3_000)}
+
+${projectSpecificDeckRequirements(projectName)}
 
 Deep Research 方法备忘录（只作为结构与方法参考，不是项目事实来源）：
 ${String(researchMethodology || "采用场景分层、证据三角验证、反例保留和行动假设验证。").slice(0, 18_000)}
@@ -565,7 +710,7 @@ ${JSON.stringify(packets)}`
     ],
     text: { format: { type: "json_schema", name: "cross_scenario_deck_script", strict: true, schema: deckScriptSchema } }
   }, "Deep Research 洞察报告与专业 Deck 结构化");
-  return safeJsonParse(extractResponseText(response));
+  return normalizeDeckScript(safeJsonParse(extractResponseText(response)), projectName);
 }
 
 async function generateDeckScript(projectName, guides, instructions = "") {
