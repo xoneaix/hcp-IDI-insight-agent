@@ -295,6 +295,13 @@
               <label for="deckInstructions"><span>研究者补充要求</span><small>可补充策略重点、叙事结构、视觉偏好或需要谨慎处理的判断。</small></label>
               <textarea id="deckInstructions" maxlength="1200" rows="3"></textarea>
               <button class="secondary-button" id="refreshDeckScript" disabled>更新洞察报告与 Deck</button>
+              <div class="deck-reference-uploader" id="deckReferenceDropzone">
+                <input id="deckReferenceInput" type="file" accept=".doc,.docx,.pdf,.ppt,.pptx,.txt,.md,.png,.jpg,.jpeg,.webp,.tif,.tiff" multiple hidden>
+                <span class="deck-reference-upload-icon" aria-hidden="true">↑</span>
+                <div><strong>拖放补充资料到这里</strong><small>支持 Word、PDF、PPT、图片与文本；文件内容将作为研究背景供 AI 理解，不会冒充受访者证据。</small><em>DOC · DOCX · PDF · PPT · PPTX · PNG · JPG · TXT · MD</em></div>
+                <button class="secondary-button" id="selectDeckReferences" type="button">+ 选择补充文件</button>
+              </div>
+              <div class="deck-reference-list" id="deckReferenceList"></div>
             </div>
             <div class="deck-preview-head"><div><span>16:9 DECK PREVIEW</span><strong id="deckPreviewCounter">0 / 0</strong></div><div><button class="icon-button" id="deckPreviewPrev" aria-label="上一页" disabled>←</button><button class="icon-button" id="deckPreviewNext" aria-label="下一页" disabled>→</button></div></div>
             <div class="deck-preview-workspace">

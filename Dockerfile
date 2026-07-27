@@ -7,9 +7,9 @@ ENV NODE_ENV=production \
     PYTHON_BIN=/opt/venv/bin/python3
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg python3 python3-venv ca-certificates \
+    && apt-get install -y --no-install-recommends ffmpeg python3 python3-venv ca-certificates antiword catdoc poppler-utils tesseract-ocr tesseract-ocr-chi-sim \
     && python3 -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir python-docx==1.2.0 pypdf==6.1.1 \
+    && /opt/venv/bin/pip install --no-cache-dir python-docx==1.2.0 python-pptx==1.0.2 pypdf==6.1.1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

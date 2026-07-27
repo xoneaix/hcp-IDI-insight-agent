@@ -52,6 +52,10 @@ function requiredInsightSlide(insight) {
 function requiredPrioritySlides(priorityEntries) {
   const chunks = [];
   for (let index = 0; index < priorityEntries.length; index += 3) chunks.push(priorityEntries.slice(index, index + 3));
+  const concise = (value, limit) => {
+    const text = String(value || "").replace(/^优先级\s*\d+\s*[:：]\s*/u, "").trim();
+    return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+  };
   return chunks.map((chunk, chunkIndex) => ({
     title: chunkIndex === 0
       ? "治疗选择与信任建立，是院外转化的前置条件"
@@ -59,9 +63,9 @@ function requiredPrioritySlides(priorityEntries) {
     takeaway: "策略优先级直接承接研究洞察报告，并以证据基础、适用场景、行动与验证方式形成闭环。",
     layout: chunkIndex === 0 ? "机会优先级" : "策略框架",
     content: chunk.map(({ priority }) => ({
-      heading: priority.title,
-      body: `${priority.rationale} 建议行动：${priority.action}`,
-      supporting_points: [priority.action]
+      heading: concise(priority.title, 30),
+      body: `${concise(priority.rationale, 72)} 建议行动：${concise(priority.action, 64)}`,
+      supporting_points: [concise(priority.action, 68)]
     })),
     implications: chunk.map(({ priority }) => priority.action),
     evidence: [],
@@ -149,6 +153,8 @@ const state = {
   expandedGapQuestionIndex: null
 };
 let outlineRenameGuideId = "";
+let deckSnapshotGeneration = 0;
+let deckThumbnailCache = { key: "", images: [] };
 
 const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:4174" : "";
 const WORKSPACE_URL = location.protocol === "file:" ? "index.html" : "/";
@@ -232,6 +238,15 @@ function normalizedReportWorkspace(workspace = {}) {
   return {
     deckScript: workspace?.deckScript && typeof workspace.deckScript === "object" ? workspace.deckScript : null,
     instructions: String(workspace?.instructions || DEFAULT_DECK_INSTRUCTIONS).slice(0, 1200),
+    supplementalFiles: (Array.isArray(workspace?.supplementalFiles) ? workspace.supplementalFiles : []).slice(0, 6).map((file) => ({
+      id: String(file?.id || `${Date.now()}-${Math.random()}`),
+      name: String(file?.name || "补充资料").slice(0, 180),
+      type: String(file?.type || "FILE").slice(0, 20),
+      size: Math.max(0, Number(file?.size || 0)),
+      text: String(file?.text || "").slice(0, 40_000),
+      truncated: Boolean(file?.truncated),
+      addedAt: Number(file?.addedAt || Date.now())
+    })).filter((file) => file.text),
     slideIndex: Math.max(0, Number(workspace?.slideIndex || 0)),
     generatedAt: Number(workspace?.generatedAt || 0),
     sourceFingerprint: String(workspace?.sourceFingerprint || ""),
@@ -594,6 +609,9 @@ function showView(view, options = {}) {
   if (options.updateHash !== false && location.hash !== `#${view}`) history.replaceState(null, "", `#${view}`);
   if (options.scroll !== false) window.scrollTo({ top: 0, behavior: "smooth" });
   if (view === "matrix") requestAnimationFrame(updateMatrixScrollState);
+  if (view === "report") requestAnimationFrame(() => {
+    if (state.reportWorkspace) renderDeckPreview(deckScriptForPresentation(state.reportWorkspace.deckScript, state.projectName));
+  });
 }
 
 async function checkHealth() {
@@ -2450,6 +2468,11 @@ function comprehensiveReportPayload() {
   return {
     projectName: state.projectName,
     instructions: state.reportWorkspace?.instructions || DEFAULT_DECK_INSTRUCTIONS,
+    supplementalDocuments: (state.reportWorkspace?.supplementalFiles || []).map((file) => ({
+      name: file.name,
+      type: file.type,
+      text: file.text
+    })),
     guides: reportReadyGuides().map((guide) => ({
       id: guide.id,
       title: guide.title,
@@ -2534,21 +2557,103 @@ function deckPreviewSlideMarkup(slide, index, compact = false) {
   if (compact) {
     return `<div class="deck-thumbnail-canvas ${cover ? "cover" : ""}"><i>${escapeHTML(slide.layout || "INSIGHT")}</i><strong>${escapeHTML(visibleTitle)}</strong><b></b></div>`;
   }
-  const blockLimit = ["旅程地图", "行动路线图", "证据链"].includes(slide.layout) ? 4 : 3;
+  const blockLimit = ["旅程地图", "行动路线图", "证据链", "机会优先级"].includes(slide.layout) ? 4 : 3;
+  const previewBlocks = (slide.content || []).slice(0, blockLimit).map((block) => ({ ...block }));
+  if (slide.layout === "机会优先级" && previewBlocks.length === 3) {
+    previewBlocks.push({ heading: slide.management_decisions?.[0] || "建立行动验证闭环", body: "明确责任团队、适用场景、验证指标与复盘周期。" });
+  }
   const implication = slide.implications?.[0];
   return `<article class="deck-preview-slide ${cover ? "cover" : ""} ${layoutClasses[slide.layout] || "editorial"}">
     <span class="deck-preview-layout-icon">${deckLayoutGlyph(slide.layout)}</span>
     <small>${String(index + 1).padStart(2, "0")} · ${escapeHTML(slide.layout || "INSIGHT")}</small>
     <h3>${escapeHTML(visibleTitle)}</h3>
     <p>${escapeHTML(slide.takeaway)}</p>
-    <div class="deck-preview-content">${(slide.content || []).slice(0, blockLimit).map((block, blockIndex) => `<article><i>${String(blockIndex + 1).padStart(2, "0")}</i><strong>${escapeHTML(block.heading)}</strong><p>${escapeHTML(block.body)}</p></article>`).join("")}</div>
+    <div class="deck-preview-content">${previewBlocks.map((block, blockIndex) => `<article><i>${String(blockIndex + 1).padStart(2, "0")}</i><strong>${escapeHTML(String(block.heading || "").replace(/^优先级\s*\d+\s*[:：]\s*/u, "").slice(0, slide.layout === "机会优先级" ? 28 : 80))}</strong><p>${escapeHTML(String(block.body || "").slice(0, slide.layout === "策略框架" ? 118 : 360))}</p></article>`).join("")}</div>
     ${slide.evidence?.[0] && slide.layout === "洞察证据" ? `<blockquote>“${escapeHTML(slide.evidence[0].quote)}”<span>${escapeHTML(slide.evidence[0].document_id)}</span></blockquote>` : implication && index > 0 ? `<div class="deck-preview-implication"><span>STRATEGIC IMPLICATION</span><strong>${escapeHTML(implication)}</strong></div>` : ""}
   </article>`;
+}
+
+function deckSnapshotKey(slides) {
+  return JSON.stringify(slides.map((slide) => [
+    slide.title,
+    slide.takeaway,
+    slide.layout,
+    (slide.content || []).map((block) => [block.heading, block.body])
+  ]));
+}
+
+function inlineComputedStyles(source, target) {
+  const sourceNodes = [source, ...source.querySelectorAll("*")];
+  const targetNodes = [target, ...target.querySelectorAll("*")];
+  sourceNodes.forEach((node, index) => {
+    const computed = getComputedStyle(node);
+    const targetNode = targetNodes[index];
+    for (const property of computed) targetNode.style.setProperty(property, computed.getPropertyValue(property), computed.getPropertyPriority(property));
+  });
+}
+
+async function snapshotDeckSlide(element, width = 480) {
+  const sourceWidth = Math.max(1, Math.round(element.getBoundingClientRect().width));
+  const sourceHeight = Math.max(1, Math.round(element.getBoundingClientRect().height));
+  const clone = element.cloneNode(true);
+  inlineComputedStyles(element, clone);
+  clone.style.width = `${sourceWidth}px`;
+  clone.style.height = `${sourceHeight}px`;
+  clone.style.margin = "0";
+  clone.style.transform = "none";
+  clone.style.position = "relative";
+  clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sourceWidth}" height="${sourceHeight}"><foreignObject width="100%" height="100%">${new XMLSerializer().serializeToString(clone)}</foreignObject></svg>`;
+  const blobUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = blobUrl;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = Math.round(width * 9 / 16);
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/png");
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+}
+
+async function hydrateDeckThumbnailSnapshots(slides, key) {
+  const generation = ++deckSnapshotGeneration;
+  const elements = [...$("#deckPreviewTrack").querySelectorAll(".deck-preview-slide")];
+  if (elements.length !== slides.length) return;
+  const images = [];
+  for (let index = 0; index < elements.length; index += 1) {
+    if (generation !== deckSnapshotGeneration) return;
+    try {
+      images[index] = await snapshotDeckSlide(elements[index]);
+      const button = $(`#deckPreviewThumbnails [data-deck-slide="${index}"]`);
+      const fallback = button?.querySelector(".deck-thumbnail-canvas");
+      if (fallback && images[index]) {
+        const image = document.createElement("img");
+        image.className = "deck-thumbnail-image";
+        image.alt = `第 ${index + 1} 页幻灯片完整快照`;
+        image.src = images[index];
+        fallback.replaceWith(image);
+      }
+    } catch (error) {
+      console.warn(`Deck thumbnail snapshot ${index + 1} failed`, error);
+    }
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  }
+  if (generation === deckSnapshotGeneration) deckThumbnailCache = { key, images };
 }
 
 function renderDeckPreview(script) {
   const slides = script?.slides || [];
   const workspace = state.reportWorkspace;
+  const snapshotKey = deckSnapshotKey(slides);
+  const cachedImages = deckThumbnailCache.key === snapshotKey ? deckThumbnailCache.images : [];
   workspace.slideIndex = Math.min(Math.max(0, workspace.slideIndex), Math.max(0, slides.length - 1));
   $("#deckPreviewCounter").textContent = slides.length ? `${workspace.slideIndex + 1} / ${slides.length}` : "0 / 0";
   $("#deckThumbnailCount").textContent = `${slides.length} 页`;
@@ -2558,13 +2663,23 @@ function renderDeckPreview(script) {
     ? slides.map((slide, index) => deckPreviewSlideMarkup(slide, index)).join("")
     : '<div class="report-empty-state" style="flex:0 0 100%"><div><strong>暂无 Deck 预览</strong><span>生成洞察报告后，这里将逐页显示专业 16:9 幻灯片。</span></div></div>';
   $("#deckPreviewThumbnails").innerHTML = slides.length
-    ? slides.map((slide, index) => `<button class="deck-thumbnail ${index === workspace.slideIndex ? "active" : ""}" type="button" data-deck-slide="${index}" aria-label="查看第 ${index + 1} 页：${escapeHTML(index === 0 ? preferredInsightDeckTitle(state.projectName, slide.title) : slide.title)}"><span>${String(index + 1).padStart(2, "0")}</span>${deckPreviewSlideMarkup(slide, index, true)}</button>`).join("")
+    ? slides.map((slide, index) => `<button class="deck-thumbnail ${index === workspace.slideIndex ? "active" : ""}" type="button" data-deck-slide="${index}" aria-label="查看第 ${index + 1} 页：${escapeHTML(index === 0 ? preferredInsightDeckTitle(state.projectName, slide.title) : slide.title)}"><span>${String(index + 1).padStart(2, "0")}</span>${cachedImages[index] ? `<img class="deck-thumbnail-image" src="${cachedImages[index]}" alt="第 ${index + 1} 页幻灯片完整快照">` : deckPreviewSlideMarkup(slide, index, true)}</button>`).join("")
     : '<div class="empty-compact">生成后显示全部页面缩略图</div>';
   requestAnimationFrame(() => {
     const track = $("#deckPreviewTrack");
     track.scrollTo({ left: track.clientWidth * workspace.slideIndex, behavior: "instant" });
     $("#deckPreviewThumbnails .active")?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    if (slides.length && cachedImages.length !== slides.length) hydrateDeckThumbnailSnapshots(slides, snapshotKey);
   });
+}
+
+function renderDeckReferences() {
+  const files = state.reportWorkspace?.supplementalFiles || [];
+  $("#deckReferenceList").innerHTML = files.map((file) => `<article class="deck-reference-file">
+    <span>${escapeHTML(file.type || "FILE")}</span>
+    <div><strong title="${escapeHTML(file.name)}">${escapeHTML(file.name)}</strong><small>${formatFileSize(file.size)} · 已提取 ${file.text.length.toLocaleString()} 字${file.truncated ? " · 长文已智能截取" : ""}</small></div>
+    <button type="button" data-remove-deck-reference="${escapeHTML(file.id)}" aria-label="删除 ${escapeHTML(file.name)}">×</button>
+  </article>`).join("");
 }
 
 function renderReport() {
@@ -2580,6 +2695,7 @@ function renderReport() {
   renderCombinedA4Report(guides, metrics, script, stale);
   renderDeckStatus(presentationScript, stale);
   renderDeckPreview(presentationScript);
+  renderDeckReferences();
   $("#deckInstructions").value = workspace.instructions || DEFAULT_DECK_INSTRUCTIONS;
   $("#generateDeckScript").disabled = !guides.length;
   $("#refreshDeckScript").disabled = !guides.length;
@@ -2686,6 +2802,65 @@ async function generateComprehensiveDeckScript() {
     buttons.forEach((button) => { button.textContent = button.dataset.label || "生成洞察报告"; });
     renderReport();
   }
+}
+
+async function uploadDeckReferences(files) {
+  const selected = [...(files || [])];
+  if (!selected.length) return;
+  state.reportWorkspace ||= normalizedReportWorkspace();
+  if (state.reportWorkspace.supplementalFiles.length + selected.length > 6) return toast("单个研究项目最多保留 6 份补充资料");
+  const accepted = /\.(docx?|pdf|pptx?|txt|md|png|jpe?g|webp|tiff?)$/i;
+  for (const file of selected) {
+    if (!accepted.test(file.name)) {
+      toast(`${file.name} 格式暂不支持`);
+      continue;
+    }
+    if (file.size > 35 * 1024 * 1024) {
+      toast(`${file.name} 超过 35 MB，请压缩后再上传`);
+      continue;
+    }
+    if (state.reportWorkspace.supplementalFiles.some((item) => item.name === file.name && item.size === file.size)) {
+      toast(`${file.name} 已在补充资料中`);
+      continue;
+    }
+    const button = $("#selectDeckReferences");
+    const previous = button.textContent;
+    button.disabled = true;
+    button.textContent = `解析 ${file.name}…`;
+    try {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      const response = await fetch(`${API_BASE}/api/report/references/parse`, { method: "POST", body: form });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `无法读取 ${file.name}`);
+      state.reportWorkspace.supplementalFiles.push({
+        id: data.id,
+        name: data.filename || file.name,
+        type: data.type || file.name.split(".").pop().toUpperCase(),
+        size: data.size || file.size,
+        text: data.text,
+        truncated: data.truncated,
+        addedAt: Date.now()
+      });
+      saveCurrentProjectWorkspace();
+      renderDeckReferences();
+      toast(`${file.name} 已加入研究背景`);
+    } catch (error) {
+      toast(error.message.includes("fetch") ? "请先启动 MedVoice 服务" : error.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = previous;
+    }
+  }
+  $("#deckReferenceInput").value = "";
+}
+
+function removeDeckReference(id) {
+  state.reportWorkspace ||= normalizedReportWorkspace();
+  state.reportWorkspace.supplementalFiles = state.reportWorkspace.supplementalFiles.filter((file) => file.id !== id);
+  saveCurrentProjectWorkspace();
+  renderDeckReferences();
+  toast("补充资料已移除");
 }
 
 function changeDeckPreview(direction) {
@@ -3111,6 +3286,25 @@ $("#deckInstructions").addEventListener("input", (event) => {
   state.reportWorkspace ||= normalizedReportWorkspace();
   state.reportWorkspace.instructions = event.target.value.slice(0, 1200);
   saveCurrentProjectWorkspace();
+});
+$("#selectDeckReferences").addEventListener("click", () => $("#deckReferenceInput").click());
+$("#deckReferenceInput").addEventListener("change", (event) => uploadDeckReferences(event.target.files));
+for (const eventName of ["dragenter", "dragover"]) {
+  $("#deckReferenceDropzone").addEventListener(eventName, (event) => {
+    event.preventDefault();
+    event.currentTarget.classList.add("dragover");
+  });
+}
+for (const eventName of ["dragleave", "drop"]) {
+  $("#deckReferenceDropzone").addEventListener(eventName, (event) => {
+    event.preventDefault();
+    event.currentTarget.classList.remove("dragover");
+  });
+}
+$("#deckReferenceDropzone").addEventListener("drop", (event) => uploadDeckReferences(event.dataTransfer.files));
+$("#deckReferenceList").addEventListener("click", (event) => {
+  const target = event.target.closest("[data-remove-deck-reference]");
+  if (target) removeDeckReference(target.dataset.removeDeckReference);
 });
 $("#deckPreviewPrev").addEventListener("click", () => changeDeckPreview(-1));
 $("#deckPreviewNext").addEventListener("click", () => changeDeckPreview(1));
