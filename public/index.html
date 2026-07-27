@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" href="assets/medvoice-logo-v4.webp" as="image" type="image/webp" fetchpriority="high" />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=20260727.1" />
+    <link rel="stylesheet" href="style.css?v=20260727.2" />
   </head>
   <body>
     <div class="app-shell">
@@ -26,12 +26,13 @@
           <span id="projectLabel" hidden>未命名访谈项目</span>
         </div>
 
+        <div class="sidebar-section-label">研究工作流</div>
         <nav aria-label="主导航">
-          <button class="nav-item active" data-view="overview"><i>⌂</i><span>洞察总览</span></button>
-          <button class="nav-item" data-view="transcripts"><i>◫</i><span>访谈采集与转录</span><em id="navCount">0</em></button>
-          <button class="nav-item" data-view="outline"><i>⌘</i><span>大纲驱动·并发分析</span></button>
-          <button class="nav-item" data-view="matrix"><i>⌗</i><span>主题矩阵</span></button>
-          <button class="nav-item" data-view="report"><i>≣</i><span>洞察报告</span></button>
+          <button class="nav-item active" data-view="overview" aria-current="page"><i aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1.5"/><rect x="14" y="3.5" width="6.5" height="6.5" rx="1.5"/><rect x="3.5" y="14" width="6.5" height="6.5" rx="1.5"/><rect x="14" y="14" width="6.5" height="6.5" rx="1.5"/></svg></i><span>洞察总览</span></button>
+          <button class="nav-item" data-view="transcripts"><i aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3.5h8.7L18 6.8v13.7H6Z"/><path d="M14.5 3.8V7h3.2M9 13.5v1M12 11.5v5M15 12.5v3"/></svg></i><span>访谈采集与转录</span><em id="navCount">0</em></button>
+          <button class="nav-item" data-view="outline"><i aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6h8M6 8v8M18 8v8M8 18h8"/></svg></i><span>大纲驱动·并发分析</span></button>
+          <button class="nav-item" data-view="matrix"><i aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8h16M4 16h16M8 4v16M16 4v16"/></svg></i><span>主题矩阵</span></button>
+          <button class="nav-item" data-view="report"><i aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3.5h8.7L18 6.8v13.7H6Z"/><path d="M14.5 3.8V7h3.2M9 11h6M9 14h6M9 17h4"/></svg></i><span>洞察报告</span></button>
         </nav>
 
         <div class="agent-status">
@@ -373,6 +374,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="app.js?v=20260727.1"></script>
+    <script type="module" src="app.js?v=20260727.2"></script>
   </body>
 </html>

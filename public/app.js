@@ -608,7 +608,12 @@ function savedView(hash = location.hash) {
 function showView(view, options = {}) {
   view = validView(view);
   $$(".view").forEach((element) => element.classList.toggle("active", element.id === `${view}-view`));
-  $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
+  $$(".nav-item").forEach((button) => {
+    const isActive = button.dataset.view === view;
+    button.classList.toggle("active", isActive);
+    if (isActive) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
   try { localStorage.setItem(VIEW_STORAGE_KEY, view); } catch {}
   if (options.updateHash !== false && location.hash !== `#${view}`) history.replaceState(null, "", `#${view}`);
   if (options.scroll !== false) window.scrollTo({ top: 0, behavior: "smooth" });
