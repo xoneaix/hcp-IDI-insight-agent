@@ -201,6 +201,18 @@ const deckScriptSchema = {
     audience: { type: "string" },
     narrative_arc: { type: "string" },
     research_methodology: { type: "string" },
+    design_system: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        visual_concept: { type: "string" },
+        palette: { type: "string" },
+        typography: { type: "string" },
+        iconography: { type: "string" },
+        data_visualization: { type: "string" }
+      },
+      required: ["visual_concept", "palette", "typography", "iconography", "data_visualization"]
+    },
     executive_summary: { type: "string" },
     decision_questions: { type: "array", items: { type: "string" } },
     cross_scenario_insights: {
@@ -253,10 +265,12 @@ const deckScriptSchema = {
           title: { type: "string" },
           takeaway: { type: "string" },
           purpose: { type: "string" },
+          audience_question: { type: "string" },
           narrative: { type: "string" },
           layout: { type: "string", enum: ["封面", "执行摘要", "场景对比", "洞察证据", "旅程地图", "策略框架", "行动路线图", "研究边界"] },
           framework: { type: "string" },
           method: { type: "string" },
+          evidence_logic: { type: "string" },
           content: {
             type: "array",
             minItems: 1,
@@ -274,6 +288,17 @@ const deckScriptSchema = {
           },
           implications: { type: "array", items: { type: "string" }, maxItems: 5 },
           management_decisions: { type: "array", items: { type: "string" }, maxItems: 4 },
+          visual_blueprint: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              composition: { type: "string" },
+              primary_visual: { type: "string" },
+              iconography: { type: "string" },
+              emphasis: { type: "string" }
+            },
+            required: ["composition", "primary_visual", "iconography", "emphasis"]
+          },
           evidence: {
             type: "array",
             maxItems: 5,
@@ -287,14 +312,15 @@ const deckScriptSchema = {
               required: ["document_id", "quote"]
             }
           },
-          visual_note: { type: "string" }
+          visual_note: { type: "string" },
+          speaker_note: { type: "string" }
         },
-        required: ["title", "takeaway", "purpose", "narrative", "layout", "framework", "method", "content", "implications", "management_decisions", "evidence", "visual_note"]
+        required: ["title", "takeaway", "purpose", "audience_question", "narrative", "layout", "framework", "method", "evidence_logic", "content", "implications", "management_decisions", "visual_blueprint", "evidence", "visual_note", "speaker_note"]
       }
     },
     caveats: { type: "array", items: { type: "string" } }
   },
-  required: ["title", "subtitle", "audience", "narrative_arc", "research_methodology", "executive_summary", "decision_questions", "cross_scenario_insights", "strategic_priorities", "slides", "caveats"]
+  required: ["title", "subtitle", "audience", "narrative_arc", "research_methodology", "design_system", "executive_summary", "decision_questions", "cross_scenario_insights", "strategic_priorities", "slides", "caveats"]
 };
 
 const roleAssignmentSchema = {
@@ -445,14 +471,15 @@ function deepResearchMethodPrompt(_projectName, guideCount, sampleCount, _instru
 - 定性样本：${sampleCount} 份
 - 使用目的：比较不同访谈场景，识别行为路径、决策驱动、阻碍与可验证的市场策略。
 
-请研究公开、可靠的一手或权威来源，并输出一份可直接交给后续分析模型使用的方法备忘录。重点回答：
+请研究公开、可靠的一手或权威来源，并输出一份可直接交给后续分析模型使用的方法与演示叙事备忘录。重点回答：
 1. 如何保持不同 Discussion Guide 与样本池边界，同时完成跨场景比较。
 2. 如何从逐题回答与逐字引文建立“事实—解释—洞察—策略”的证据链，并保留反例、不确定性和少数观点。
-3. 如何把定性发现组织为管理层可决策的逐页文字策划稿；每页应包含结论正文、关键证据、分析框架、呈现建议与需拍板事项。
-4. 哪些视觉方法适合行为旅程、场景对比、决策驱动/阻碍、机会优先级与行动路线图。
+3. 如何把定性发现组织为管理层可决策的逐页 Deck 文稿；每页应包含受众问题、结论正文、证据逻辑、分析框架、策略含义、呈现建议与需拍板事项。
+4. 哪些商业叙事和视觉方法适合行为旅程、场景对比、决策驱动/阻碍、机会优先级、信息架构与行动路线图；何时应该使用矩阵、路径图、证据引文、二维定位或优先级地图。
 5. 医药市场研究中应如何处理合规、隐私、样本限制与人工复核。
+6. 如何把复杂研究内容压缩为专业 16:9 幻灯片：确保每页一个核心主张、信息层级清晰、避免仪表盘式卡片堆叠，并合理使用简洁图标、图表、留白和强调色。
 
-只输出方法论与报告结构建议，不对本项目患者、产品或市场作任何事实判断。用简体中文，清楚区分“推荐做法”和“需要避免的偏差”，并附可点击来源。`;
+只输出方法论、叙事结构与演示设计建议，不对本项目患者、产品或市场作任何事实判断。用简体中文，清楚区分“推荐做法”和“需要避免的偏差”，并附可点击来源。`;
 }
 
 async function startDeepResearchMethod(projectName, guideCount, sampleCount, instructions = "") {
@@ -492,19 +519,28 @@ async function synthesizeDeckScript(projectName, guides, instructions = "", rese
     input: [
       {
         role: "system",
-        content: `你是资深医药定性研究负责人兼市场策略顾问。请把多个访谈场景的研究大纲、样本逐题矩阵与证据综合为一份详细的“逐页幻灯片文字策划稿”，供市场部、医学与研究负责人先审阅，再由系统生成专业 Deck。
+        content: `你是资深医药定性研究负责人、品牌策略顾问和专业演示叙事总监。请把多个访谈场景的研究大纲、样本逐题矩阵与证据综合为一份详细的“文稿版 Deck”，供市场部、医学与研究负责人审阅，并作为后续专业 PowerPoint 的唯一内容与设计蓝图。
 
 必须遵守：
 1. 两份或多份 Discussion Guide 是不同研究场景，既要分别呈现，也要进行跨场景比较；不得把不同样本池混为同一人群。
 2. 只使用输入中的研究结果和受访原话，不发明数据、事实或引用；少数观点不得写成共识。
-3. 每页只承担一个叙事任务，标题优先使用可直接说出口的结论句，而不是呆板章节名。
-4. 叙事从研究问题与场景开始，经行为路径、关键张力、场景差异和机会判断，最终落到市场策略优先级与可验证行动。
-5. 每页必须完整给出：页面目的、结论式标题、核心判断、充分的分析正文、2–5 个内容模块、建议框架/方法学、策略含义、管理层需拍板事项、建议呈现方式和可追溯证据。封面页也要提供制作说明，但最终 Deck 封面保持极简。
-6. 建议 10–16 页。这里输出的是详细文字策划稿，不受 16:9 画布字数限制；正文要足以让研究负责人判断逻辑是否完整。后续 Deck 会压缩和视觉化，不要为了“像幻灯片”而牺牲分析深度。
+3. 每页只承担一个叙事任务。标题必须是可以直接说出口的结论句，明确回答“所以呢”，不要使用“核心洞察”“市场策略”等空泛章节名，也不要写 Page 1、Page 2。
+4. 叙事要形成有因果关系的决策路径：研究背景与场景边界 → 受访者行为/决策旅程 → 关键张力和阻碍 → 场景共性与差异 → 机会判断 → 市场策略 → 可验证行动与风险边界。可按实际证据调整，不机械套模板。
+5. 每页必须完整给出：
+   - 页面目的与该页要回答的受众问题；
+   - 结论式标题、核心判断和足够丰满的分析正文；
+   - 2–5 个内容模块，每个模块包含正文和支持要点；
+   - 证据逻辑：哪些样本、回答或反例支撑该结论，证据强弱在哪里；
+   - 建议框架/方法学、策略含义、管理层需拍板事项；
+   - 专业视觉蓝图：页面构图、核心图形/图表、图标方向、强调信息与留白关系；
+   - 可追溯逐字引文与演讲者备注。
+6. 建议 12–16 页。文稿版 Deck 不受 16:9 字数限制，正文要足以让研究负责人判断逻辑、证据和策略是否完整；后续 PPT 再进行提炼与视觉化，不能为了简短而牺牲洞察深度。
 7. 策略建议要明确说明其证据基础、适用场景和验证方式；所有结论需由研究、医学与合规人员复核。
 8. 参考优秀商业策划文字稿的组织习惯：正文之后补关键证据/依据、图表建议与管理层需拍板；但不要套用与本项目无关的商业数据。
 9. 方法论资料只用于提升分析结构，绝不能覆盖或改写访谈证据；外部资料中的事实不得写成本项目发现。
-10. 输出简体中文。`
+10. 为整套 Deck 定义克制、清新、专业的视觉系统：薄荷绿/深绿为主色，允许少量琥珀或蓝绿色强调；图标应是统一线性风格且只在有助理解时使用。
+11. 最终 16:9 Deck 要像专业咨询与医药市场研究交付物，而不是网页仪表盘：优先使用单一清晰构图、路径图、场景对比、证据链、优先级地图或路线图；避免重复卡片墙和装饰性图标堆叠。
+12. 输出简体中文。`
       },
       {
         role: "user",
@@ -1229,7 +1265,7 @@ async function runReportJob(jobId, payload) {
       status: "running",
       stage: "method_planning",
       progress: 6,
-      message: "正在建立跨场景研究问题与证据边界"
+      message: "正在建立研究场景、受众问题与证据边界"
     });
     const research = await startDeepResearchMethod(payload.projectName, guides.length, sampleCount, payload.instructions);
     updateReportJob(jobId, {
@@ -1237,7 +1273,7 @@ async function runReportJob(jobId, payload) {
       stage: "deep_research",
       progress: 12,
       responseId: research.id,
-      message: "Deep Research 正在检索公开方法资料；访谈原文不会进入联网检索"
+      message: "Deep Research 正在研究专业叙事、策略框架与演示方法；访谈原文不会进入联网检索"
     });
     let background = research;
     while (background.status === "queued" || background.status === "in_progress") {
@@ -1251,8 +1287,8 @@ async function runReportJob(jobId, payload) {
         researchCalls: calls,
         progress: Math.min(68, 14 + calls * 4 + Math.floor(elapsed / 18)),
         message: calls
-          ? `Deep Research 已完成 ${calls} 次资料检索/阅读，正在形成方法备忘录`
-          : "Deep Research 正在理解任务并规划检索路径"
+          ? `Deep Research 已完成 ${calls} 次资料检索/阅读，正在形成策略与演示方法备忘录`
+          : "Deep Research 正在理解任务并规划专业研究路径"
       });
     }
     if (background.status !== "completed") {
@@ -1265,14 +1301,14 @@ async function runReportJob(jobId, payload) {
       status: "running",
       stage: "evidence_synthesis",
       progress: 72,
-      message: "方法研究完成，正在离线综合两份大纲、样本回答与逐字证据"
+      message: "方法研究完成，正在离线综合 Discussion Guide、样本回答与逐字证据"
     });
     const deckScript = await synthesizeDeckScript(payload.projectName, guides, payload.instructions, methodology);
     updateReportJob(jobId, {
       status: "running",
       stage: "deck_planning",
       progress: 96,
-      message: "正在校验逐页叙事、证据索引与 Deck 呈现建议"
+      message: "正在校验文稿版 Deck、逐页证据逻辑与视觉蓝图"
     });
     const sourceSummary = {
       guideCount: guides.length,
@@ -1283,7 +1319,7 @@ async function runReportJob(jobId, payload) {
       status: "completed",
       stage: "completed",
       progress: 100,
-      message: "详细文字版洞察报告与专业 Deck 规划已完成",
+      message: "文稿版 Deck、研究洞察报告与专业 Deck 规划已完成",
       result: {
         deckScript,
         sourceSummary,
@@ -1299,7 +1335,7 @@ async function runReportJob(jobId, payload) {
       status: "failed",
       stage: "failed",
       progress: 100,
-      message: "详细洞察报告生成失败",
+      message: "洞察报告生成失败",
       error: humanizeOpenAIError(error)
     });
   }
@@ -1321,7 +1357,7 @@ async function handleReportJobStart(req, res) {
     status: "queued",
     stage: "queued",
     progress: 2,
-    message: "详细洞察报告任务已创建，正在进入研究队列",
+    message: "洞察报告任务已创建，正在进入研究队列",
     startedAt: Date.now(),
     updatedAt: Date.now(),
     researchCalls: 0

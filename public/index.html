@@ -259,12 +259,12 @@
 
         <section class="view" id="report-view">
           <div class="section-title report-title report-hero">
-            <div><div class="eyebrow">EVIDENCE-LED STRATEGY DELIVERABLE</div><h1>综合洞察与策略 Deck</h1><p>以多份访谈大纲为研究场景，以对应样本与原话证据为基石，将洞察转译为可执行的市场策略。</p></div>
-            <button class="primary-button report-generate-button" id="generateDeckScript" disabled><span>✦</span>启动 Deep Research</button>
+            <div><div class="eyebrow">EVIDENCE-LED INSIGHT DELIVERABLE</div><h1>洞察报告</h1><p>综合多份访谈大纲、对应样本与原话证据，将真实受访者声音转译为可审阅、可追溯、可执行的市场策略。</p></div>
+            <button class="primary-button report-generate-button" id="generateDeckScript" disabled><span>✦</span>生成洞察报告</button>
           </div>
 
           <section class="report-source-panel panel">
-            <div><div class="eyebrow">RESEARCH INPUTS</div><h2>跨场景研究基座</h2><p>仅纳入已完成并发分析的访谈大纲及其绑定样本；各场景独立分析，再进行跨场景综合。</p></div>
+            <div><div class="eyebrow">RESEARCH EVIDENCE INPUTS</div><h2>研究场景与证据源</h2><p>汇集已完成分析的 Discussion Guide、对应样本与逐字证据；先保持场景边界，再完成跨场景综合。</p></div>
             <div class="report-source-summary" id="reportSourceSummary"></div>
             <div class="report-source-cards" id="reportSourceCards"></div>
           </section>
@@ -280,33 +280,35 @@
             </div>
           </section>
 
-          <section class="delivery-module manuscript-module">
-            <div class="delivery-module-head">
-              <div><div class="eyebrow">01 · DEEP RESEARCH MANUSCRIPT</div><h2>详细文字版洞察报告</h2><p>不受 16:9 画布限制，逐页完整呈现标题、分析正文、关键证据、框架方法、呈现建议与管理层需拍板事项。</p></div>
-              <div class="deck-status" id="deckScriptStatus">等待生成</div>
-            </div>
-            <div class="report-research-progress" id="reportResearchProgress" hidden>
-              <div><span id="reportResearchStage">正在准备研究任务</span><strong id="reportResearchPercent">0%</strong></div>
-              <i><b id="reportResearchBar"></b></i>
-              <p><span id="reportResearchMessage">即将启动</span><span id="reportResearchElapsed">已用时 0 秒</span></p>
-              <small>Deep Research 仅检索公开方法资料；访谈原文与样本证据在无联网工具的独立步骤中综合。</small>
-            </div>
-            <div class="deck-script-scroll" id="deckScriptContainer"></div>
-          </section>
+          <div class="report-deliverables-grid">
+            <section class="delivery-module manuscript-module">
+              <div class="delivery-module-head">
+                <div><div class="eyebrow">01 · DEEP RESEARCH DECK MANUSCRIPT</div><h2>文稿版 Deck</h2><p>逐页给出结论式标题、完整内容、证据链、分析框架、页面叙事任务，以及专业排版与视觉呈现建议。</p></div>
+                <div class="deck-status" id="deckScriptStatus">等待生成</div>
+              </div>
+              <div class="report-research-progress" id="reportResearchProgress" hidden>
+                <div><span id="reportResearchStage">正在准备研究任务</span><strong id="reportResearchPercent">0%</strong></div>
+                <i><b id="reportResearchBar"></b></i>
+                <p><span id="reportResearchMessage">即将启动</span><span id="reportResearchElapsed">已用时 0 秒</span></p>
+                <small>Deep Research 研究公开方法与策略框架；私有访谈原文在无联网工具的独立步骤中完成证据综合与逐页策划。</small>
+              </div>
+              <div class="deck-script-scroll" id="deckScriptContainer"></div>
+            </section>
 
-          <section class="delivery-module deck-builder-module">
-            <div class="delivery-module-head">
-              <div><div class="eyebrow">02 · POWERPOINT DECK</div><h2>Deck 生成与 16:9 预览</h2><p>下方预览与下载文件均由同一份文字稿驱动，避免策略结论在交付环节发生漂移。</p></div>
-              <button class="primary-button" id="exportPpt" disabled><span>↓</span>生成并下载 PPTX</button>
-            </div>
-            <div class="deck-instruction-panel">
-              <label for="deckInstructions"><span>研究者补充要求</span><small>可根据经验补充报告关注重点、结构或需要谨慎处理的判断。</small></label>
-              <textarea id="deckInstructions" maxlength="1200" rows="4"></textarea>
-              <button class="secondary-button" id="refreshDeckScript" disabled>按补充要求更新文字稿</button>
-            </div>
-            <div class="deck-preview-head"><div><span>16:9 SLIDE PREVIEW</span><strong id="deckPreviewCounter">0 / 0</strong></div><div><button class="icon-button" id="deckPreviewPrev" aria-label="上一页" disabled>←</button><button class="icon-button" id="deckPreviewNext" aria-label="下一页" disabled>→</button></div></div>
-            <div class="deck-preview-shell"><div class="deck-preview-track" id="deckPreviewTrack"></div></div>
-          </section>
+            <section class="delivery-module deck-builder-module">
+              <div class="delivery-module-head">
+                <div><div class="eyebrow">02 · PROFESSIONAL POWERPOINT</div><h2>Deck 预览</h2><p>依据文稿版 Deck 的内容、方法与视觉指引生成专业 16:9 幻灯片，并保留证据来源与人工复核边界。</p></div>
+                <button class="primary-button" id="exportPpt" disabled><span>↓</span>下载 PPTX</button>
+              </div>
+              <div class="deck-instruction-panel">
+                <label for="deckInstructions"><span>研究者补充要求</span><small>可补充策略重点、叙事结构、视觉偏好或需要谨慎处理的判断。</small></label>
+                <textarea id="deckInstructions" maxlength="1200" rows="4"></textarea>
+                <button class="secondary-button" id="refreshDeckScript" disabled>更新文稿与 Deck</button>
+              </div>
+              <div class="deck-preview-head"><div><span>16:9 DECK PREVIEW</span><strong id="deckPreviewCounter">0 / 0</strong></div><div><button class="icon-button" id="deckPreviewPrev" aria-label="上一页" disabled>←</button><button class="icon-button" id="deckPreviewNext" aria-label="下一页" disabled>→</button></div></div>
+              <div class="deck-preview-shell"><div class="deck-preview-track" id="deckPreviewTrack"></div></div>
+            </section>
+          </div>
         </section>
 
         <footer><span>MedVoice Insight Prototype · 仅用于研究洞察，不构成医学诊断或治疗建议</span><span>所有 AI 结论应由研究、医学与合规人员复核</span></footer>
