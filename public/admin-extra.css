@@ -247,6 +247,9 @@ td { color: #4c5b55; }
 .credential-box code { display: block; margin: 8px 0; padding: 10px; border-radius: 7px; background: rgba(255, 255, 255, .1); color: #e5f65c; font-size: 12px; word-break: break-all; }
 .credential-box p { color: #bed0ca; font-size: 9px; line-height: 1.6; }
 .copy-row { display: flex; gap: 7px; }
+.row-actions button:disabled { cursor: wait; opacity: .72; }
+.row-actions button[data-reset]:disabled:not(.delivery-failed) { color: #28725d; font-weight: 700; }
+.row-actions button.delivery-failed { color: #a84d52; }
 
 @media (max-width: 1120px) {
   .admin-top { align-items: flex-start; }

@@ -226,9 +226,23 @@ function bindRows() {
   });
   document.querySelectorAll("[data-reset]").forEach((button) => {
     button.onclick = async () => {
-      const data = await api("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: button.dataset.email, role: button.dataset.role }) });
-      showDeliveryResult(data, "密码已重置");
-      await load();
+      if (!confirm(`确定重置 ${button.dataset.email} 的密码吗？\n\n当前密码和旧临时密码会立即失效，系统将把新的临时密码发送至该邮箱。`)) return;
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.textContent = "正在重置并发信…";
+      try {
+        const data = await api(`/api/admin/users/${button.dataset.reset}/reset-password`, { method: "POST" });
+        showDeliveryResult(data, "密码已重置");
+        button.textContent = data.emailed ? "邮件已发送 ✓" : "请复制临时密码";
+        button.classList.toggle("delivery-failed", !data.emailed);
+        const statusCell = button.closest("tr")?.children?.[3];
+        if (statusCell) statusCell.textContent = "待修改";
+      } catch (error) {
+        $("#adminMessage").textContent = `密码重置失败：${error.message}`;
+        $("#adminMessage").className = "message admin-global-message error";
+        button.disabled = false;
+        button.textContent = originalText;
+      }
     };
   });
   document.querySelectorAll("[data-approve]").forEach((button) => {

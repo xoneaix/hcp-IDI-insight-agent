@@ -73,3 +73,35 @@ test("AI usage statistics preserve exact tokens and aggregate by account and day
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("changed passwords persist across store restarts and reset links are single use", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "medvoice-password-"));
+  const databasePath = join(directory, "auth.sqlite");
+  try {
+    let store = await AuthStore.create(databasePath);
+    const credentials = await store.addUser("qianru.liu@hisunpharm.com");
+    const user = await store.authenticate(credentials.email, credentials.temporaryPassword);
+    await store.changePassword(user.id, credentials.temporaryPassword, "Qianru-secure-2026!");
+    store.db.close();
+
+    store = await AuthStore.create(databasePath);
+    assert.equal(await store.authenticate(credentials.email, credentials.temporaryPassword), null);
+    assert.equal((await store.authenticate(credentials.email, "Qianru-secure-2026!")).mustChangePassword, false);
+
+    const reset = store.createPasswordReset(credentials.email, 30);
+    assert.equal(reset.email, credentials.email);
+    assert.match(reset.token, /^[A-Za-z0-9_-]{40,}$/);
+    await store.resetPasswordWithToken(reset.token, "Qianru-recovered-2026!");
+    assert.equal(await store.authenticate(credentials.email, "Qianru-secure-2026!"), null);
+    assert.equal((await store.authenticate(credentials.email, "Qianru-recovered-2026!")).mustChangePassword, false);
+    await assert.rejects(() => store.resetPasswordWithToken(reset.token, "Another-password-2026!"), /无效或已过期/);
+
+    const adminReset = await store.resetPasswordById(user.id);
+    assert.equal(adminReset.email, credentials.email);
+    assert.equal(await store.authenticate(credentials.email, "Qianru-recovered-2026!"), null);
+    assert.equal((await store.authenticate(credentials.email, adminReset.temporaryPassword)).mustChangePassword, true);
+    store.db.close();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

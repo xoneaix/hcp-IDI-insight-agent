@@ -23,7 +23,14 @@ import { buildInsightDeck, buildInsightDocx, buildMatrixWorkbook, buildRoleTrans
 import { AuthStore } from "./lib/auth-store.mjs";
 import { PostgresAuthStore } from "./lib/postgres-auth-store.mjs";
 import { PostgresInterviewLibraryStore, SqliteInterviewLibraryStore } from "./lib/interview-library-store.mjs";
-import { mailConfigured, mailProviderLabel, sendAccessApprovedEmail, sendMailDeliveryTestEmail } from "./lib/mailer.mjs";
+import {
+  mailConfigured,
+  mailProviderLabel,
+  sendAccessApprovedEmail,
+  sendAdminPasswordResetEmail,
+  sendMailDeliveryTestEmail,
+  sendPasswordResetLinkEmail
+} from "./lib/mailer.mjs";
 
 const ROOT = join(process.cwd(), "public");
 const PORT = Number(process.env.PORT || 4174);
@@ -56,6 +63,7 @@ if (AUTH_REQUIRED) {
   await authStore.ensureAdmin(process.env.ADMIN_EMAIL, process.env.ADMIN_PASSWORD);
 }
 const loginAttempts = new Map();
+const passwordResetAttempts = new Map();
 const requestContext = new AsyncLocalStorage();
 
 const mime = {
@@ -943,6 +951,19 @@ function checkLoginRateLimit(req, email) {
   return () => loginAttempts.delete(key);
 }
 
+function checkPasswordResetRateLimit(req, email) {
+  const key = `${req.socket.remoteAddress || "unknown"}:${String(email || "").trim().toLowerCase()}`;
+  const now = Date.now();
+  const record = passwordResetAttempts.get(key) || { count: 0, startedAt: now };
+  if (now - record.startedAt > 60 * 60 * 1000) {
+    record.count = 0;
+    record.startedAt = now;
+  }
+  record.count += 1;
+  passwordResetAttempts.set(key, record);
+  if (record.count > 3) throw new Error("重置邮件请求过于频繁，请一小时后再试");
+}
+
 async function handleAuth(req, res, pathname) {
   if (pathname === "/api/auth/session" && req.method === "GET") {
     const user = await currentUser(req);
@@ -967,6 +988,25 @@ async function handleAuth(req, res, pathname) {
     if (!user) return;
     const payload = await readJson(req, 100_000);
     await authStore.changePassword(user.id, payload.currentPassword, payload.newPassword);
+    return json(res, 200, { changed: true });
+  }
+  if (pathname === "/api/auth/password-reset/request" && req.method === "POST") {
+    if (!mailConfigured()) throw new Error("邮件重置服务暂不可用，请联系管理员");
+    const payload = await readJson(req, 100_000);
+    checkPasswordResetRateLimit(req, payload.email);
+    const reset = await authStore.createPasswordReset(payload.email, 30);
+    if (reset) {
+      const appUrl = process.env.PUBLIC_APP_URL || "https://medvoice-insight-agent.onrender.com/";
+      const resetUrl = new URL("/login", appUrl);
+      resetUrl.searchParams.set("reset", reset.token);
+      await sendPasswordResetLinkEmail({ email: reset.email, resetUrl: resetUrl.toString(), expiresMinutes: 30 });
+    }
+    return json(res, 200, { requested: true, message: "如果该邮箱已开通且处于启用状态，重置邮件将在几分钟内送达。" });
+  }
+  if (pathname === "/api/auth/password-reset/confirm" && req.method === "POST") {
+    const payload = await readJson(req, 100_000);
+    if (payload.newPassword !== payload.confirmPassword) throw new Error("两次输入的新密码不一致");
+    await authStore.resetPasswordWithToken(payload.token, payload.newPassword);
     return json(res, 200, { changed: true });
   }
   if (pathname === "/api/access/request" && req.method === "POST") {
@@ -1005,6 +1045,22 @@ async function handleAdmin(req, res, pathname) {
       }
     }
     return json(res, 200, { ...credentials, emailed: false, emailError: "邮件服务尚未配置" });
+  }
+  const userResetMatch = pathname.match(/^\/api\/admin\/users\/(\d+)\/reset-password$/);
+  if (userResetMatch && req.method === "POST") {
+    if (!mailConfigured()) throw new Error("邮件服务尚未配置，暂不能重置密码");
+    const credentials = await authStore.resetPasswordById(userResetMatch[1]);
+    try {
+      const delivery = await sendAdminPasswordResetEmail(credentials);
+      return json(res, 200, { email: credentials.email, emailed: true, deliveryId: delivery.id, provider: delivery.provider });
+    } catch (error) {
+      return json(res, 200, {
+        email: credentials.email,
+        temporaryPassword: credentials.temporaryPassword,
+        emailed: false,
+        emailError: error.message || "邮件发送失败"
+      });
+    }
   }
   const userMatch = pathname.match(/^\/api\/admin\/users\/(\d+)$/);
   if (userMatch && req.method === "PATCH") {
