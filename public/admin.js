@@ -35,8 +35,10 @@ function showCredential(email, password) {
 
 function showDeliveryResult(data, actionText = "账号已开通") {
   if (data.emailed) {
-    showCredential(data.email, "");
-    $("#adminMessage").textContent = `${actionText}，临时账号与密码已通过邮件发送至 ${data.email}。`;
+    showCredential(data.email, data.temporaryPassword || "");
+    const provider = data.provider === "brevo" ? "Brevo" : data.provider === "resend" ? "Resend" : "邮件服务";
+    const fallback = data.temporaryPassword ? " 新临时密码也仅在本次操作中显示；若企业邮箱未收到，请通过公司内部安全渠道转交。" : "";
+    $("#adminMessage").textContent = `${actionText}，邮件已提交至 ${provider}（投递编号：${data.deliveryId || "已受理"}）。${fallback}`;
     $("#adminMessage").className = "message admin-global-message success";
     return;
   }
@@ -233,7 +235,7 @@ function bindRows() {
       try {
         const data = await api(`/api/admin/users/${button.dataset.reset}/reset-password`, { method: "POST" });
         showDeliveryResult(data, "密码已重置");
-        button.textContent = data.emailed ? "邮件已发送 ✓" : "请复制临时密码";
+        button.textContent = data.emailed ? "已提交邮件 ✓" : "请复制临时密码";
         button.classList.toggle("delivery-failed", !data.emailed);
         const statusCell = button.closest("tr")?.children?.[3];
         if (statusCell) statusCell.textContent = "待修改";

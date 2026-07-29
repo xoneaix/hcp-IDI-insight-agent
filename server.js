@@ -1052,7 +1052,13 @@ async function handleAdmin(req, res, pathname) {
     const credentials = await authStore.resetPasswordById(userResetMatch[1]);
     try {
       const delivery = await sendAdminPasswordResetEmail(credentials);
-      return json(res, 200, { email: credentials.email, emailed: true, deliveryId: delivery.id, provider: delivery.provider });
+      return json(res, 200, {
+        email: credentials.email,
+        temporaryPassword: credentials.temporaryPassword,
+        emailed: true,
+        deliveryId: delivery.id,
+        provider: delivery.provider
+      });
     } catch (error) {
       return json(res, 200, {
         email: credentials.email,

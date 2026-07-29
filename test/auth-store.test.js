@@ -98,6 +98,7 @@ test("changed passwords persist across store restarts and reset links are single
 
     const adminReset = await store.resetPasswordById(user.id);
     assert.equal(adminReset.email, credentials.email);
+    assert.doesNotMatch(adminReset.temporaryPassword, /[IlO01]/);
     assert.equal(await store.authenticate(credentials.email, "Qianru-recovered-2026!"), null);
     assert.equal((await store.authenticate(credentials.email, adminReset.temporaryPassword)).mustChangePassword, true);
     store.db.close();
