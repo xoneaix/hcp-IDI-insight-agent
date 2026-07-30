@@ -23,6 +23,7 @@ import { buildInsightDeck, buildInsightDocx, buildMatrixWorkbook, buildRoleTrans
 import { AuthStore } from "./lib/auth-store.mjs";
 import { PostgresAuthStore } from "./lib/postgres-auth-store.mjs";
 import { PostgresInterviewLibraryStore, SqliteInterviewLibraryStore } from "./lib/interview-library-store.mjs";
+import { PostgresProjectWorkspaceStore, SqliteProjectWorkspaceStore } from "./lib/project-workspace-store.mjs";
 import {
   mailConfigured,
   mailProviderLabel,
@@ -58,6 +59,9 @@ const authStore = process.env.DATABASE_URL
 const libraryStore = process.env.DATABASE_URL
   ? await PostgresInterviewLibraryStore.create(process.env.DATABASE_URL)
   : await SqliteInterviewLibraryStore.create(join(DATA_DIR, "interview-library.sqlite"));
+const projectWorkspaceStore = process.env.DATABASE_URL
+  ? await PostgresProjectWorkspaceStore.create(process.env.DATABASE_URL)
+  : await SqliteProjectWorkspaceStore.create(join(DATA_DIR, "project-workspaces.sqlite"));
 if (AUTH_REQUIRED) {
   if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) throw new Error("在线权限模式需要配置 ADMIN_EMAIL 和 ADMIN_PASSWORD");
   await authStore.ensureAdmin(process.env.ADMIN_EMAIL, process.env.ADMIN_PASSWORD);
@@ -2373,6 +2377,32 @@ async function handleLibrary(req, res, pathname) {
   return json(res, 404, { error: "资料库接口不存在" });
 }
 
+async function handleProjectWorkspaces(req, res, pathname) {
+  const userId = req.user.id;
+  if (req.method === "GET" && pathname === "/api/workspaces") {
+    return json(res, 200, { workspaces: await projectWorkspaceStore.list(userId) });
+  }
+  const match = pathname.match(/^\/api\/workspaces\/([a-zA-Z0-9_-]{1,80})$/);
+  if (!match) return json(res, 404, { error: "未找到对应的研究项目工作区" });
+  const projectId = match[1];
+  if (req.method === "PUT") {
+    const body = await readJson(req, 12_000_000);
+    if (!body.workspace || typeof body.workspace !== "object" || Array.isArray(body.workspace)) {
+      return json(res, 400, { error: "工作区数据格式不正确" });
+    }
+    const serialized = JSON.stringify(body.workspace);
+    if (Buffer.byteLength(serialized, "utf8") > 10_000_000) {
+      return json(res, 413, { error: "工作区内容超过 10MB，请减少补充资料后重试" });
+    }
+    const saved = await projectWorkspaceStore.upsert(userId, projectId, body.projectName, body.workspace);
+    return json(res, 200, saved);
+  }
+  if (req.method === "DELETE") {
+    return json(res, 200, { deleted: await projectWorkspaceStore.delete(userId, projectId) });
+  }
+  return json(res, 405, { error: "Method not allowed" });
+}
+
 async function handleSettings(req, res) {
   const payload = await readJson(req, 100_000);
   if (payload.action === "clear") {
@@ -2481,6 +2511,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/settings") {
       if (AUTH_REQUIRED && req.user.role !== "admin") return json(res, 403, { error: "仅管理员可以配置临时 API Key" });
       return await handleSettings(req, res);
+    }
+    if (url.pathname === "/api/workspaces" || url.pathname.startsWith("/api/workspaces/")) {
+      return await handleProjectWorkspaces(req, res, url.pathname);
     }
     if (url.pathname.startsWith("/api/library/")) return await handleLibrary(req, res, url.pathname);
     if (req.method === "POST" && url.pathname === "/api/media/convert-audio") return await handleConvertAudio(req, res);

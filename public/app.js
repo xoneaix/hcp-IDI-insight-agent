@@ -157,6 +157,10 @@ const state = {
 let outlineRenameGuideId = "";
 let deckSnapshotGeneration = 0;
 let deckThumbnailCache = { key: "", images: [] };
+let workspaceSyncReady = false;
+let hadLocalProjectCatalog = false;
+const workspaceSaveTimers = new Map();
+const workspaceSaveChains = new Map();
 
 const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:4174" : "";
 const WORKSPACE_URL = location.protocol === "file:" ? "index.html" : "/";
@@ -193,7 +197,9 @@ function currentProject() {
 
 function loadProjects() {
   let parsed = [];
-  try { parsed = JSON.parse(localStorage.getItem(PROJECTS_STORAGE_KEY) || "[]"); } catch {}
+  const storedProjects = localStorage.getItem(PROJECTS_STORAGE_KEY);
+  hadLocalProjectCatalog = Boolean(storedProjects);
+  try { parsed = JSON.parse(storedProjects || "[]"); } catch {}
   state.projects = Array.isArray(parsed) && parsed.length
     ? parsed.map((project) => ({ id: safeProjectId(project.id), name: String(project.name || DEFAULT_PROJECT_NAME).slice(0, 80) }))
     : [{ id: DEFAULT_PROJECT_ID, name: DEFAULT_PROJECT_NAME }];
@@ -205,6 +211,15 @@ function loadProjects() {
 function saveProjects() {
   localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(state.projects));
   localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, state.activeProjectId);
+}
+
+function readLocalProjectWorkspace(projectId) {
+  try {
+    const value = JSON.parse(localStorage.getItem(projectDataKey(projectId)) || "null");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 function createOutlineGuideId() {
@@ -296,9 +311,9 @@ function applyOutlineGuideToState(guide = activeOutlineGuide()) {
   if (outlineInput) outlineInput.value = state.outlineText;
 }
 
-function saveCurrentProjectWorkspace() {
+function currentProjectWorkspaceSnapshot() {
   syncActiveOutlineGuideFromState();
-  localStorage.setItem(projectDataKey(), JSON.stringify({
+  return {
     outlineText: state.outlineText,
     outlineSource: state.outlineSource,
     outlineFileMeta: state.outlineFileMeta,
@@ -309,8 +324,44 @@ function saveCurrentProjectWorkspace() {
     analyses: state.analyses,
     matrix: state.matrix,
     report: state.report,
-    reportWorkspace: state.reportWorkspace
-  }));
+    reportWorkspace: state.reportWorkspace,
+    _localUpdatedAt: Date.now()
+  };
+}
+
+async function persistProjectWorkspace(project, workspace) {
+  const response = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(safeProjectId(project.id))}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectName: project.name, workspace })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `工作区保存失败（${response.status}）`);
+  return data;
+}
+
+function scheduleProjectWorkspaceSave(project, workspace) {
+  if (!workspaceSyncReady || !state.currentUser) return;
+  const projectId = safeProjectId(project.id);
+  clearTimeout(workspaceSaveTimers.get(projectId));
+  workspaceSaveTimers.set(projectId, setTimeout(() => {
+    workspaceSaveTimers.delete(projectId);
+    const previous = workspaceSaveChains.get(projectId) || Promise.resolve();
+    const next = previous
+      .catch(() => {})
+      .then(() => persistProjectWorkspace(project, workspace))
+      .catch((error) => {
+        console.warn("MedVoice workspace sync failed", error);
+        toast(`研究工作区暂未同步：${error.message}`, 5000);
+      });
+    workspaceSaveChains.set(projectId, next);
+  }, 500));
+}
+
+function saveCurrentProjectWorkspace() {
+  const workspace = currentProjectWorkspaceSnapshot();
+  localStorage.setItem(projectDataKey(), JSON.stringify(workspace));
+  scheduleProjectWorkspaceSave({ ...currentProject() }, workspace);
 }
 
 function loadCurrentProjectWorkspace() {
@@ -338,6 +389,69 @@ function loadCurrentProjectWorkspace() {
   state.overviewInsightFilter = "all";
   state.reportWorkspace = normalizedReportWorkspace(data.reportWorkspace);
   applyOutlineGuideToState();
+}
+
+async function syncProjectWorkspaces() {
+  if (!state.currentUser) return;
+  const response = await fetch(`${API_BASE}/api/workspaces`, { cache: "no-store" });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `工作区加载失败（${response.status}）`);
+  const remoteRows = Array.isArray(data.workspaces) ? data.workspaces : [];
+  const localProjects = state.projects.map((project) => ({ ...project }));
+  const mergedProjects = [];
+  const seen = new Set();
+  let migratedCount = 0;
+
+  for (const row of remoteRows) {
+    const projectId = safeProjectId(row.projectId);
+    const localProject = localProjects.find((project) => project.id === projectId);
+    const localWorkspace = readLocalProjectWorkspace(projectId);
+    const remoteWorkspace = row.workspace && typeof row.workspace === "object" ? row.workspace : {};
+    const localUpdatedAt = Number(localWorkspace?._localUpdatedAt || 0);
+    const remoteUpdatedAt = Number(remoteWorkspace?._localUpdatedAt || Date.parse(row.updatedAt) || 0);
+    const project = {
+      id: projectId,
+      name: String(localUpdatedAt > remoteUpdatedAt ? localProject?.name : row.projectName || localProject?.name || DEFAULT_PROJECT_NAME).slice(0, 80)
+    };
+    mergedProjects.push(project);
+    seen.add(projectId);
+    if (localWorkspace && localUpdatedAt > remoteUpdatedAt) {
+      await persistProjectWorkspace(project, localWorkspace);
+      migratedCount += 1;
+    } else {
+      localStorage.setItem(projectDataKey(projectId), JSON.stringify(remoteWorkspace));
+    }
+  }
+
+  for (const project of localProjects) {
+    if (seen.has(project.id)) continue;
+    const localWorkspace = readLocalProjectWorkspace(project.id);
+    const isSyntheticEmptyDefault = project.id === DEFAULT_PROJECT_ID
+      && !hadLocalProjectCatalog;
+    if (remoteRows.length && isSyntheticEmptyDefault) continue;
+    const workspace = localWorkspace || { _localUpdatedAt: Date.now() };
+    await persistProjectWorkspace(project, workspace);
+    mergedProjects.push(project);
+    seen.add(project.id);
+    migratedCount += 1;
+  }
+
+  if (!mergedProjects.length) {
+    const project = { id: DEFAULT_PROJECT_ID, name: DEFAULT_PROJECT_NAME };
+    const workspace = { _localUpdatedAt: Date.now() };
+    await persistProjectWorkspace(project, workspace);
+    mergedProjects.push(project);
+  }
+
+  state.projects = mergedProjects;
+  if (!state.projects.some((project) => project.id === state.activeProjectId)) {
+    state.activeProjectId = state.projects[0].id;
+  }
+  state.projectName = currentProject().name;
+  saveProjects();
+  loadCurrentProjectWorkspace();
+  workspaceSyncReady = true;
+  if (migratedCount) toast(`已将 ${migratedCount} 个研究工作区同步到当前账号`, 4200);
 }
 
 function normalizeProjectFields(item = {}) {
@@ -653,8 +767,14 @@ async function checkPortalSession() {
     state.authRequired = Boolean(data.authRequired);
     state.currentUser = data.user || null;
     renderTrialUserIdentity(state.authRequired ? data.user : null);
-    if (state.authRequired && !data.authenticated) return location.assign("/login");
-    if (data.user?.mustChangePassword) return location.assign("/login?change=1");
+    if (state.authRequired && !data.authenticated) {
+      location.assign("/login");
+      return null;
+    }
+    if (data.user?.mustChangePassword) {
+      location.assign("/login?change=1");
+      return null;
+    }
     $("#adminAccess").hidden = data.user?.role !== "admin" || !state.authRequired;
     $("#portalLogout").hidden = !state.authRequired;
     if (data.user?.role === "admin" && state.authRequired) {
@@ -668,8 +788,10 @@ async function checkPortalSession() {
         console.warn("MedVoice admin request badge failed", error);
       }
     }
+    return data;
   } catch (error) {
     console.warn("MedVoice session check failed", error);
+    return null;
   }
 }
 
@@ -3444,6 +3566,7 @@ function createProject() {
   const project = { id: createProjectId(), name: name.trim().slice(0, 80) };
   state.projects.push(project);
   setActiveProject(project.id);
+  saveCurrentProjectWorkspace();
   showView("transcripts");
   toast(`已创建研究：${project.name}`);
 }
@@ -3464,7 +3587,16 @@ async function initializeApp() {
   loadCurrentProjectWorkspace();
   showView(initialView, { updateHash: true, scroll: false });
   renderAll();
-  await checkPortalSession();
+  const session = await checkPortalSession();
+  if (state.authRequired && !session?.authenticated) return;
+  try {
+    await syncProjectWorkspaces();
+    renderAll();
+  } catch (error) {
+    workspaceSyncReady = Boolean(state.currentUser);
+    console.warn("MedVoice project workspace bootstrap failed", error);
+    toast(`账号工作区加载失败，当前继续使用本地缓存：${error.message}`, 6000);
+  }
   const health = await checkHealth();
   try {
     await loadInterviewLibrary();
