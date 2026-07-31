@@ -2,17 +2,18 @@ import { interviewIdForType, nextInterviewId, repairInterviewIds, roleDocumentFo
 import { flattenQuestionGroups, groupOutlineQuestions, groupsFromQuestions, normalizeQuestionGroups } from "./outline-structure.js?v=20260725.2";
 import { createPreviewWorkspace } from "./preview-data.js?v=20260731.2";
 import { trialUserIdentity } from "./user-identity.js?v=20260726.1";
+import { redactProductNames, redactProductReferences } from "./compliance-redaction.js?v=20260731.1";
 
 const DEFAULT_PROJECT_ID = "default";
 const DEFAULT_PROJECT_NAME = "未命名访谈项目";
-const MEIMAN_DECK_TITLE = "玫满院外深访：从首购到复购，患者如何决定“该吃药了”";
+const PRODUCT_X_DECK_TITLE = "产品X院外深访：从首购到复购，患者如何决定“该吃药了”";
 const REQUIRED_INSIGHT_DIMENSIONS = ["决策路径", "核心阻碍", "疗效诉求", "安全顾虑", "信息与信任", "话术风险", "院外复购风险"];
 const DEFAULT_DECK_INSTRUCTIONS = "以研究洞察报告为唯一内容主骨架，完整纳入决策路径、核心阻碍、疗效诉求、安全顾虑、信息与信任、话术风险、院外复购风险、跨场景原话证据、全部市场策略优先级和研究边界；核心阻碍、疗效诉求、话术风险、院外复购风险分别独立成页；每项策略写明证据基础、适用场景、行动与验证方式；以商业图表、路径、对比、证据链或优先级地图呈现，避免纯文字堆叠。";
 
 function preferredInsightDeckTitle(projectName, fallback = "") {
-  return String(projectName || "").includes("玫满")
-    ? MEIMAN_DECK_TITLE
-    : String(fallback || projectName || "研究洞察报告").trim();
+  return /(?:产品X|玫满)/u.test(String(projectName || ""))
+    ? PRODUCT_X_DECK_TITLE
+    : redactProductNames(fallback || projectName || "研究洞察报告").trim();
 }
 
 function inferredInsightDimension(insight) {
@@ -224,7 +225,7 @@ function loadProjects() {
   hadLocalProjectCatalog = Boolean(storedProjects);
   try { parsed = JSON.parse(storedProjects || "[]"); } catch {}
   state.projects = Array.isArray(parsed) && parsed.length
-    ? parsed.map((project) => ({ id: safeProjectId(project.id), name: String(project.name || DEFAULT_PROJECT_NAME).slice(0, 80) }))
+    ? parsed.map((project) => ({ id: safeProjectId(project.id), name: redactProductNames(project.name || DEFAULT_PROJECT_NAME).slice(0, 80) }))
     : [{ id: DEFAULT_PROJECT_ID, name: DEFAULT_PROJECT_NAME }];
   const active = safeProjectId(localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || state.projects[0].id);
   state.activeProjectId = state.projects.some((project) => project.id === active) ? active : state.projects[0].id;
@@ -233,6 +234,7 @@ function loadProjects() {
 
 function saveProjects() {
   if (state.previewMode) return;
+  state.projects = redactProductReferences(state.projects);
   localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(state.projects));
   localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, state.activeProjectId);
 }
@@ -240,7 +242,9 @@ function saveProjects() {
 function readLocalProjectWorkspace(projectId) {
   try {
     const value = JSON.parse(localStorage.getItem(projectDataKey(projectId)) || "null");
-    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? redactProductReferences(value)
+      : null;
   } catch {
     return null;
   }
@@ -354,10 +358,12 @@ function currentProjectWorkspaceSnapshot() {
 }
 
 async function persistProjectWorkspace(project, workspace) {
+  const safeProjectName = redactProductNames(project.name);
+  const safeWorkspace = redactProductReferences(workspace);
   const response = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(safeProjectId(project.id))}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ projectName: project.name, workspace })
+    body: JSON.stringify({ projectName: safeProjectName, workspace: safeWorkspace })
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || `工作区保存失败（${response.status}）`);
@@ -384,14 +390,14 @@ function scheduleProjectWorkspaceSave(project, workspace) {
 
 function saveCurrentProjectWorkspace() {
   if (state.previewMode) return;
-  const workspace = currentProjectWorkspaceSnapshot();
+  const workspace = redactProductReferences(currentProjectWorkspaceSnapshot());
   localStorage.setItem(projectDataKey(), JSON.stringify(workspace));
   scheduleProjectWorkspaceSave({ ...currentProject() }, workspace);
 }
 
 function loadCurrentProjectWorkspace() {
   let data = {};
-  try { data = JSON.parse(localStorage.getItem(projectDataKey()) || "{}"); } catch {}
+  try { data = redactProductReferences(JSON.parse(localStorage.getItem(projectDataKey()) || "{}")); } catch {}
   const persistedGuides = Array.isArray(data.outlineGuides) ? data.outlineGuides : [];
   const legacyGuide = {
     title: outlineGuideTitle(data.outlineSource, 0),
@@ -494,7 +500,7 @@ async function syncProjectWorkspaces() {
     const remoteUpdatedAt = Number(remoteWorkspace?._localUpdatedAt || Date.parse(row.updatedAt) || 0);
     const project = {
       id: projectId,
-      name: String(localUpdatedAt > remoteUpdatedAt ? localProject?.name : row.projectName || localProject?.name || DEFAULT_PROJECT_NAME).slice(0, 80)
+      name: redactProductNames(localUpdatedAt > remoteUpdatedAt ? localProject?.name : row.projectName || localProject?.name || DEFAULT_PROJECT_NAME).slice(0, 80)
     };
     mergedProjects.push(project);
     seen.add(projectId);
@@ -542,7 +548,7 @@ function normalizeProjectFields(item = {}) {
   const project = state.projects.find((candidate) => candidate.id === id);
   return {
     projectId: id,
-    projectName: String(item.projectName || item.project_name || project?.name || DEFAULT_PROJECT_NAME).slice(0, 80)
+    projectName: redactProductNames(item.projectName || item.project_name || project?.name || DEFAULT_PROJECT_NAME).slice(0, 80)
   };
 }
 
@@ -667,7 +673,7 @@ async function uploadChunkedConversionJob(file, item) {
   const startResponse = await fetch(`${API_BASE}/api/media/convert-audio/chunked/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ filename: file.name, mimeType: file.type, size: file.size, chunkCount })
+    body: JSON.stringify({ filename: item.fileName || redactProductNames(file.name), mimeType: file.type, size: file.size, chunkCount })
   });
   const start = await startResponse.json().catch(() => ({}));
   if (!startResponse.ok) throw new Error(start.error || "创建分片上传任务失败");
@@ -743,7 +749,7 @@ async function convertInterviewAudio(index, options = {}) {
           method: "POST",
           headers: {
             "Content-Type": item.file.type || "application/octet-stream",
-            "X-Filename": encodeURIComponent(item.file.name)
+            "X-Filename": encodeURIComponent(item.fileName || redactProductNames(item.file.name))
           },
           body: item.file
         });
@@ -1002,7 +1008,7 @@ function formatFileSize(bytes) {
 }
 
 function interviewPayload(item) {
-  return {
+  return redactProductReferences({
     projectId: item.projectId || state.activeProjectId,
     projectName: item.projectName || state.projectName,
     clientId: item.id,
@@ -1018,7 +1024,7 @@ function interviewPayload(item) {
     text: item.text || "",
     draftText: item.draftText || "",
     roleResult: item.roleResult || null
-  };
+  });
 }
 
 function accountLibraryPrefix() {
@@ -1216,6 +1222,14 @@ function applyPersistedItem(local, persisted) {
 
 function normalizeLoadedInterviewState(item) {
   if (!item) return item;
+  item.projectName = redactProductNames(item.projectName);
+  item.name = redactProductNames(item.name);
+  item.fileName = redactProductNames(item.fileName);
+  item.progressText = redactProductNames(item.progressText);
+  item.error = redactProductNames(item.error);
+  item.text = redactProductNames(item.text);
+  item.draftText = redactProductNames(item.draftText);
+  item.roleResult = redactProductReferences(item.roleResult);
   if (/正在保存到账号资料库/.test(item.progressText || "")) item.progressText = "";
   item.uploadProgress = null;
   item.persisting = false;
@@ -1465,14 +1479,14 @@ async function addFiles(files, options = {}) {
       projectId: state.activeProjectId,
       projectName: state.projectName,
       id: nextId(options.type),
-      name: file.name,
+      name: redactProductNames(file.name),
       type: normalizeRespondentType(options.type),
       duration: Number.isFinite(options.durationSeconds) ? formatDuration(options.durationSeconds) : isText ? "—" : "读取中",
       durationSeconds: Number.isFinite(options.durationSeconds) ? options.durationSeconds : null,
       status: isText ? "可分析" : options.source === "实时录音" ? "录音已保存" : "待转录",
       text: "",
       file,
-      fileName: file.name,
+      fileName: redactProductNames(file.name),
       fileSize: file.size,
       mimeType: file.type || "application/octet-stream",
       hasFile: true,
@@ -1666,7 +1680,9 @@ async function createStoredTranscriptionJob(item, mode) {
 }
 
 function applyTranscriptionResult(item, data) {
-  item.text = (data.segments || []).map((segment) => `${segment.speaker} [${formatDuration(segment.start)}]：${segment.text}`).join("\n") || data.text || "";
+  item.text = redactProductNames(
+    (data.segments || []).map((segment) => `${segment.speaker} [${formatDuration(segment.start)}]：${segment.text}`).join("\n") || data.text || ""
+  );
   item.roleResult = null;
   item.status = "已转录";
   item.progressText = data.transcription_mode === "fast-whisper"
@@ -1727,7 +1743,7 @@ async function transcribeInterview(index, options = {}) {
         method: "POST",
         headers: {
           "Content-Type": item.file.type || "application/octet-stream",
-          "X-Filename": encodeURIComponent(item.file.name),
+          "X-Filename": encodeURIComponent(item.fileName || redactProductNames(item.file.name)),
           "X-Transcribe-Mode": mode,
           ...(Number.isFinite(item.durationSeconds) ? { "X-Media-Duration": String(item.durationSeconds) } : {})
         },
@@ -1988,7 +2004,7 @@ async function identifyRolesForItems(ready) {
       }
       const result = data.status === "completed" ? data.results?.[0] : await pollRoleIdentifyJob(data.id, item, index + 1, ready.length);
       if (result) {
-        item.roleResult = result;
+        item.roleResult = redactProductReferences(result);
         item.roleSelected = true;
         item.roleExpanded = false;
         item.status = "已转录";
@@ -2100,7 +2116,8 @@ function syncQuestionFramework({ rerender = false } = {}) {
 }
 
 function parseOutlineFromText() {
-  state.outlineText = $("#outlineInput").value.trim();
+  state.outlineText = redactProductNames($("#outlineInput").value).trim();
+  $("#outlineInput").value = state.outlineText;
   state.questionGroups = groupOutlineQuestions(state.outlineText, extractQuestions(state.outlineText));
   state.questions = flattenQuestionGroups(state.questionGroups);
   state.outlineSource = state.outlineSource || "手动输入";
@@ -2134,22 +2151,22 @@ async function uploadOutline(file) {
     if (guide && (shouldCreateGuide || state.outlineUploadMode === "replace" || /^访谈大纲\s*\d+$/u.test(guide.title))) {
       guide.title = outlineGuideTitle(data.filename || file.name, state.outlineGuides.indexOf(guide));
     }
-    state.outlineText = data.text;
-    state.outlineSource = data.filename;
+    state.outlineText = redactProductNames(data.text);
+    state.outlineSource = redactProductNames(data.filename);
     state.outlineFileMeta = {
-      name: data.filename || file.name,
+      name: redactProductNames(data.filename || file.name),
       size: file.size,
       type: file.type || file.name.split(".").pop()?.toUpperCase() || "DOCUMENT",
       lastModified: file.lastModified || Date.now(),
       edited: false
     };
-    state.questionGroups = groupOutlineQuestions(data.text, data.questions || extractQuestions(data.text));
+    state.questionGroups = groupOutlineQuestions(state.outlineText, redactProductReferences(data.questions || extractQuestions(state.outlineText)));
     state.questions = flattenQuestionGroups(state.questionGroups);
     invalidateOutlineAnalysis();
     $("#outlineInput").value = state.outlineText;
     saveCurrentProjectWorkspace();
     renderAll();
-    toast(`已载入 ${data.filename}，整理出 ${state.questionGroups.length} 个维度、${state.questions.length} 个问题`);
+    toast(`已载入 ${state.outlineSource}，整理出 ${state.questionGroups.length} 个维度、${state.questions.length} 个问题`);
   } catch (error) {
     toast(error.message.includes("fetch") ? "请先启动 MedVoice 本地服务，再解析 Word / PDF" : error.message);
   } finally {
@@ -3261,10 +3278,10 @@ async function runAnalysis() {
     if (!response.ok) throw new Error(job.error || "创建分析任务失败");
     setPipeline(analysisPipelineStep(job.stage), job.progress, job.message, { ...job, questionCount: state.questions.length });
     const data = await pollAnalysisJob(job.id, state.questions.length);
-    state.report = data.report;
-    state.analyses = data.analyses;
-    state.matrix = data.matrix;
-    state.questions = data.questions;
+    state.report = redactProductReferences(data.report);
+    state.analyses = redactProductReferences(data.analyses);
+    state.matrix = redactProductReferences(data.matrix);
+    state.questions = redactProductReferences(data.questions);
     saveCurrentProjectWorkspace();
     renderAll();
     await delay(320);

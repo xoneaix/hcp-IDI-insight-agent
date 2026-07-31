@@ -24,6 +24,7 @@ import { AuthStore } from "./lib/auth-store.mjs";
 import { PostgresAuthStore } from "./lib/postgres-auth-store.mjs";
 import { PostgresInterviewLibraryStore, SqliteInterviewLibraryStore } from "./lib/interview-library-store.mjs";
 import { PostgresProjectWorkspaceStore, SqliteProjectWorkspaceStore } from "./lib/project-workspace-store.mjs";
+import { redactProductNames, redactProductReferences } from "./public/compliance-redaction.js";
 import {
   mailConfigured,
   mailProviderLabel,
@@ -38,7 +39,7 @@ const PORT = Number(process.env.PORT || 4174);
 const MAP_MODEL = process.env.MAP_MODEL || "gpt-5.4-mini";
 const SYNTHESIS_MODEL = process.env.SYNTHESIS_MODEL || "gpt-5.5";
 const DEEP_RESEARCH_MODEL = process.env.DEEP_RESEARCH_MODEL || "o3-deep-research";
-const MEIMAN_DECK_TITLE = "玫满院外深访：从首购到复购，患者如何决定“该吃药了”";
+const PRODUCT_X_DECK_TITLE = "产品X院外深访：从首购到复购，患者如何决定“该吃药了”";
 const REQUIRED_INSIGHT_DIMENSIONS = ["决策路径", "核心阻碍", "疗效诉求", "安全顾虑", "信息与信任", "话术风险", "院外复购风险"];
 const MAX_CONCURRENCY = Number(process.env.MAX_CONCURRENCY || 4);
 const AUTH_REQUIRED = process.env.AUTH_REQUIRED === "true";
@@ -536,15 +537,15 @@ async function retrieveBackgroundResponse(responseId) {
 }
 
 function preferredInsightDeckTitle(projectName, fallback = "") {
-  return String(projectName || "").includes("玫满")
-    ? MEIMAN_DECK_TITLE
-    : String(fallback || projectName || "研究洞察报告").trim();
+  return /(?:产品X|玫满)/u.test(String(projectName || ""))
+    ? PRODUCT_X_DECK_TITLE
+    : redactProductNames(fallback || projectName || "研究洞察报告").trim();
 }
 
 function projectSpecificDeckRequirements(projectName) {
-  if (!String(projectName || "").includes("玫满")) return "";
+  if (!/(?:产品X|玫满)/u.test(String(projectName || ""))) return "";
   return `本项目的强制要求：
-- Deck 总标题固定为：${MEIMAN_DECK_TITLE}
+- Deck 总标题固定为：${PRODUCT_X_DECK_TITLE}
 - “研究洞察报告”是 Deck 的唯一内容主骨架。必须逐项形成并写入幻灯片的研究维度包括：决策路径、核心阻碍、疗效诉求、安全顾虑、信息与信任、话术风险、院外复购风险。
 - 市场策略优先级必须完整进入策略与行动幻灯片，尤其要保留并深化这些已有方向：聚焦“炎性红肿痘的规范口服治疗选择”；搭建“医生背书 + 真实案例 + 安全 FAQ”的三段式信任链；把“安全可靠”改写为具体可回答的问题清单；建立院外复购安全闭环；优化疗效话术，避免绝对疗效和无来源比例数字。
 - 核心阻碍、疗效诉求、话术风险、院外复购风险分别至少有一页独立承载，不能仅在执行摘要或演讲者备注中带过。
@@ -1135,10 +1136,10 @@ async function handleOutlineParse(req, res) {
     const script = join(process.cwd(), "scripts", "outline_parser.py");
     const { stdout } = await execFileAsync(python, [script, tempPath], { maxBuffer: 30_000_000 });
     const parsed = JSON.parse(stdout);
-    const text = String(parsed.text || "").trim();
+    const text = redactProductNames(parsed.text).trim();
     if (!text) throw new Error("未能从文件中提取到可读文字；扫描版 PDF 请先执行 OCR");
     const questions = extractOutlineQuestions(text);
-    json(res, 200, { filename: file.filename, text, questions });
+    json(res, 200, { filename: redactProductNames(file.filename), text, questions });
   } finally {
     await unlink(tempPath).catch(() => {});
   }
@@ -1159,7 +1160,7 @@ async function handleReportReferenceParse(req, res) {
     const script = join(process.cwd(), "scripts", "reference_parser.py");
     const { stdout } = await execFileAsync(python, [script, tempPath], { maxBuffer: 40_000_000 });
     const parsed = JSON.parse(stdout);
-    const text = String(parsed.text || "").trim();
+    const text = redactProductNames(parsed.text).trim();
     if (!text) {
       throw new Error([".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"].includes(suffix)
         ? "图片中未识别到可读文字，请上传更清晰的原图"
@@ -1167,7 +1168,7 @@ async function handleReportReferenceParse(req, res) {
     }
     json(res, 200, {
       id: randomUUID(),
-      filename: file.filename,
+      filename: redactProductNames(file.filename),
       size: file.data.length,
       type: suffix.slice(1).toUpperCase(),
       text: text.slice(0, 40_000),
@@ -1179,7 +1180,7 @@ async function handleReportReferenceParse(req, res) {
 }
 
 async function handleExport(req, res, kind) {
-  const payload = await readJson(req, 25_000_000);
+  const payload = redactProductReferences(await readJson(req, 25_000_000));
   if (kind === "role-docx") {
     if (!Array.isArray(payload.documents) || !payload.documents.length) throw new Error("请先完成至少一份访谈的角色区分");
     return binary(res, 200, await buildRoleTranscriptDocx(payload), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "MedVoice-role-labeled-transcript.docx");
@@ -1197,7 +1198,7 @@ async function handleExport(req, res, kind) {
 
 async function handleIdentifyRoles(req, res) {
   if (!API_KEY) return json(res, 503, { error: "尚未连接 AI 服务；请先完成临时 API Key 配置。" });
-  const payload = await readJson(req, 25_000_000);
+  const payload = redactProductReferences(await readJson(req, 25_000_000));
   if (!Array.isArray(payload.documents) || !payload.documents.length) throw new Error("请选择至少一份已转录访谈");
   if (payload.documents.length > 10) throw new Error("单次最多区分 10 份访谈，请分批处理");
   const documents = payload.documents.map((document, index) => {
@@ -1211,7 +1212,7 @@ async function handleIdentifyRoles(req, res) {
     };
   });
   const results = await runWithConcurrency(documents, Math.min(2, MAX_CONCURRENCY), identifyDocumentRoles);
-  json(res, 200, { results, model: MAP_MODEL });
+  json(res, 200, redactProductReferences({ results, model: MAP_MODEL }));
 }
 
 const ROLE_JOB_TTL_MS = 2 * 60 * 60 * 1000;
@@ -1225,7 +1226,7 @@ function cleanupRoleJobs() {
 }
 
 function publicRoleJob(job) {
-  return {
+  return redactProductReferences({
     id: job.id,
     status: job.status,
     stage: job.stage,
@@ -1240,7 +1241,7 @@ function publicRoleJob(job) {
     updatedAt: job.updatedAt,
     results: job.status === "completed" ? job.results : undefined,
     error: job.status === "failed" ? job.error : undefined
-  };
+  });
 }
 
 function updateRoleJob(id, patch) {
@@ -1293,6 +1294,7 @@ async function runRoleIdentifyJob(jobId, documents) {
 }
 
 function normalizeRoleDocuments(payload) {
+  payload = redactProductReferences(payload);
   if (!Array.isArray(payload.documents) || !payload.documents.length) throw new Error("请选择至少一份已转录访谈");
   if (payload.documents.length > 10) throw new Error("单次最多区分 10 份访谈，请分批处理");
   return payload.documents.map((document, index) => {
@@ -1369,7 +1371,7 @@ function estimatedAnalysisRemainingSeconds(job) {
 }
 
 function publicAnalysisJob(job) {
-  return {
+  return redactProductReferences({
     id: job.id,
     status: job.status,
     stage: job.stage,
@@ -1384,7 +1386,7 @@ function publicAnalysisJob(job) {
     estimatedRemainingSeconds: estimatedAnalysisRemainingSeconds(job),
     result: job.status === "completed" ? job.result : undefined,
     error: job.status === "failed" ? job.error : undefined
-  };
+  });
 }
 
 async function runAnalysisJob(jobId, payload) {
@@ -1460,7 +1462,7 @@ async function runAnalysisJob(jobId, payload) {
 async function handleAnalysisJobStart(req, res) {
   if (!API_KEY) return json(res, 503, { error: "尚未连接 AI 服务；请在页面右上角完成临时 API Key 配置。" });
   cleanupAnalysisJobs();
-  const payload = validateAnalysisPayload(await readJson(req));
+  const payload = validateAnalysisPayload(redactProductReferences(await readJson(req)));
   const id = randomUUID();
   const job = {
     id,
@@ -1489,7 +1491,7 @@ function handleAnalysisJobStatus(req, res, id) {
 
 async function handleAnalyze(req, res) {
   if (!API_KEY) return json(res, 503, { error: "尚未连接 AI 服务；请在页面右上角完成临时 API Key 配置。" });
-  const payload = validateAnalysisPayload(await readJson(req));
+  const payload = validateAnalysisPayload(redactProductReferences(await readJson(req)));
   const analyses = await runWithConcurrency(payload.documents, MAX_CONCURRENCY, (doc) => analyzeDocument(doc, payload.outline, payload.questions));
   const report = await synthesize(payload.projectName, payload.outline, analyses);
   const matrix = payload.documents.map((document, index) => ({
@@ -1498,7 +1500,13 @@ async function handleAnalyze(req, res) {
     type: document.type,
     answers: analyses[index].outline_answers
   }));
-  json(res, 200, { report, analyses, matrix, questions: payload.questions, models: { map: MAP_MODEL, synthesis: SYNTHESIS_MODEL } });
+  json(res, 200, redactProductReferences({
+    report,
+    analyses,
+    matrix,
+    questions: payload.questions,
+    models: { map: MAP_MODEL, synthesis: SYNTHESIS_MODEL }
+  }));
 }
 
 const REPORT_JOB_TTL_MS = 3 * 60 * 60 * 1000;
@@ -1518,7 +1526,7 @@ function updateReportJob(id, patch) {
 }
 
 function publicReportJob(job) {
-  return {
+  return redactProductReferences({
     id: job.id,
     status: job.status,
     stage: job.stage,
@@ -1530,7 +1538,7 @@ function publicReportJob(job) {
     researchCalls: job.researchCalls || 0,
     result: job.status === "completed" ? job.result : undefined,
     error: job.status === "failed" ? job.error : undefined
-  };
+  });
 }
 
 async function runReportJob(jobId, payload) {
@@ -1620,7 +1628,7 @@ async function runReportJob(jobId, payload) {
 async function handleReportJobStart(req, res) {
   if (!API_KEY) return json(res, 503, { error: "尚未连接 AI 服务；请先完成 AI 服务配置。" });
   cleanupReportJobs();
-  const payload = await readJson(req, 25_000_000);
+  const payload = redactProductReferences(await readJson(req, 25_000_000));
   const guides = Array.isArray(payload.guides)
     ? payload.guides.filter((guide) => guide?.report && Array.isArray(guide.matrix) && guide.matrix.length)
     : [];
@@ -1657,14 +1665,14 @@ function handleReportJobStatus(req, res, id) {
 
 async function handleDeckScript(req, res) {
   if (!API_KEY) return json(res, 503, { error: "尚未连接 AI 服务；请先完成 AI 服务配置。" });
-  const payload = await readJson(req, 25_000_000);
+  const payload = redactProductReferences(await readJson(req, 25_000_000));
   const guides = Array.isArray(payload.guides)
     ? payload.guides.filter((guide) => guide?.report && Array.isArray(guide.matrix) && guide.matrix.length)
     : [];
   if (!guides.length) throw new Error("请先完成至少一个访谈场景的大纲驱动分析");
   if (guides.length > 4) throw new Error("单次最多综合 4 个访谈场景");
   const deckScript = await generateDeckScript(payload.projectName, guides, payload.instructions, payload.supplementalDocuments);
-  return json(res, 200, {
+  return json(res, 200, redactProductReferences({
     deckScript,
     sourceSummary: {
       guideCount: guides.length,
@@ -1672,7 +1680,7 @@ async function handleDeckScript(req, res) {
       questionCount: guides.reduce((total, guide) => total + (guide.questions?.length || 0), 0)
     },
     model: SYNTHESIS_MODEL
-  });
+  }));
 }
 
 
@@ -1900,7 +1908,7 @@ async function handleTranscribe(req, res) {
   const modePart = parts.find((part) => part.name === "transcriptionMode");
   const mode = normalizeTranscriptionMode(modePart?.data?.toString("utf8") || req.headers["x-transcribe-mode"]);
   const result = await transcribeUploadedMedia(file.data, file.filename, file.headers.match(/content-type:\s*([^\r\n]+)/i)?.[1] || "application/octet-stream", durationPart?.data?.toString("utf8"), mode);
-  json(res, 200, result);
+  json(res, 200, redactProductReferences(result));
 }
 
 function safeUploadSuffix(filename) {
@@ -2189,7 +2197,7 @@ function cleanupTranscriptionJobs() {
 }
 
 function publicTranscriptionJob(job) {
-  return {
+  return redactProductReferences({
     id: job.id,
     status: job.status,
     stage: job.stage,
@@ -2201,7 +2209,7 @@ function publicTranscriptionJob(job) {
     updatedAt: job.updatedAt,
     result: job.status === "completed" ? job.result : undefined,
     error: job.status === "failed" ? job.error : undefined
-  };
+  });
 }
 
 function updateTranscriptionJob(id, patch) {
@@ -2270,7 +2278,7 @@ async function handleLargeTranscribe(req, res) {
   const sourcePath = join(JOB_DIR, `medvoice-source-${jobId}${safeUploadSuffix(originalName)}`);
   try {
     await streamUploadToFile(req, sourcePath);
-    return json(res, 200, await transcribeLargeMediaFile(sourcePath, req.headers["x-media-duration"], { mode: transcriptionModeFromRequest(req) }));
+    return json(res, 200, redactProductReferences(await transcribeLargeMediaFile(sourcePath, req.headers["x-media-duration"], { mode: transcriptionModeFromRequest(req) })));
   } finally {
     await unlink(sourcePath).catch(() => {});
   }
@@ -2286,7 +2294,7 @@ async function handleStoredTranscribeJobStart(req, res, userId, itemId) {
   if (!fileInfo?.isFile()) return json(res, 404, { error: "原始访谈文件已不在服务端，请重新上传" });
   if (fileInfo.size <= DIRECT_AUDIO_LIMIT) {
     const result = await transcribeStoredLibraryItem(userId, itemId, transcriptionModeFromRequest(req));
-    return json(res, 200, { status: "completed", result });
+    return json(res, 200, redactProductReferences({ status: "completed", result }));
   }
   const id = randomUUID();
   const mode = transcriptionModeFromRequest(req);
@@ -2324,7 +2332,7 @@ async function handleLibrary(req, res, pathname) {
     return json(res, 200, { items: await libraryStore.listItems(user.id) });
   }
   if (req.method === "POST" && pathname === "/api/library/items") {
-    const meta = decodeMetadataHeader(req);
+    const meta = redactProductReferences(decodeMetadataHeader(req));
     const id = randomUUID();
     const fileName = String(meta.name || "interview.bin").slice(0, 240);
     const storagePath = libraryFilePath(user.id, id, fileName);
@@ -2339,7 +2347,7 @@ async function handleLibrary(req, res, pathname) {
   }
   const itemMatch = pathname.match(/^\/api\/library\/items\/([^/]+)$/);
   if (itemMatch && req.method === "PATCH") {
-    const patch = await readJson(req, 2_000_000);
+    const patch = redactProductReferences(await readJson(req, 2_000_000));
     const item = await libraryStore.updateItem(user.id, itemMatch[1], patch);
     if (!item) return json(res, 404, { error: "资料不存在或无权访问" });
     return json(res, 200, { item });
@@ -2368,7 +2376,7 @@ async function handleLibrary(req, res, pathname) {
   const transcribeMatch = pathname.match(/^\/api\/library\/items\/([^/]+)\/transcribe$/);
   if (transcribeMatch && req.method === "POST") {
     const result = await transcribeStoredLibraryItem(user.id, transcribeMatch[1], transcriptionModeFromRequest(req));
-    return json(res, 200, result);
+    return json(res, 200, redactProductReferences(result));
   }
   if (req.method === "DELETE" && pathname === "/api/library/items") {
     await removeStoredFiles(await libraryStore.deleteAll(user.id));
@@ -2386,7 +2394,7 @@ async function handleProjectWorkspaces(req, res, pathname) {
   if (!match) return json(res, 404, { error: "未找到对应的研究项目工作区" });
   const projectId = match[1];
   if (req.method === "PUT") {
-    const body = await readJson(req, 12_000_000);
+    const body = redactProductReferences(await readJson(req, 12_000_000));
     if (!body.workspace || typeof body.workspace !== "object" || Array.isArray(body.workspace)) {
       return json(res, 400, { error: "工作区数据格式不正确" });
     }
