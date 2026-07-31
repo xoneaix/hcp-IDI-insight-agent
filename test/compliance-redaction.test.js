@@ -32,3 +32,14 @@ test("compliance redaction recursively masks transcript and role content", () =>
   assert.equal(result.roleResult.exchanges[0].question, "为什么选择产品X？");
   assert.equal(containsProductBrandName(JSON.stringify(result)), false);
 });
+
+test("compliance redaction removes company and compound identifiers from outline content", () => {
+  const outline = redactProductReferences({
+    title: "访谈大纲1",
+    text: "海正药业 产品X（盐酸米诺环素）\n院外患者深度访谈\n药品通用名：盐酸米诺环素",
+    questions: ["您对海正药业的产品了解多少？", "是否了解（盐酸米诺环素）的注意事项？"]
+  });
+  assert.equal(outline.text, "产品X\n院外患者深度访谈\n药品通用名：");
+  assert.deepEqual(outline.questions, ["您对产品了解多少？", "是否了解注意事项？"]);
+  assert.equal(containsProductBrandName(JSON.stringify(outline)), false);
+});

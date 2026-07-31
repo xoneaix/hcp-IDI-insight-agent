@@ -2,7 +2,7 @@ import { interviewIdForType, nextInterviewId, repairInterviewIds, roleDocumentFo
 import { flattenQuestionGroups, groupOutlineQuestions, groupsFromQuestions, normalizeQuestionGroups } from "./outline-structure.js?v=20260725.2";
 import { createPreviewWorkspace } from "./preview-data.js?v=20260731.2";
 import { trialUserIdentity } from "./user-identity.js?v=20260726.1";
-import { redactProductNames, redactProductReferences } from "./compliance-redaction.js?v=20260731.1";
+import { redactProductNames, redactProductReferences } from "./compliance-redaction.js?v=20260731.2";
 
 const DEFAULT_PROJECT_ID = "default";
 const DEFAULT_PROJECT_NAME = "未命名访谈项目";

@@ -62,8 +62,8 @@ test("project workspace migration redacts product names across reports and Deck 
 
     store.db.prepare(`
       UPDATE project_workspaces
-      SET project_name='玫满院外深访',
-          workspace='{"report":{"summary":"患者提到泰尔丝和玫满"}}'
+      SET project_name='产品X院外深访',
+          workspace='{"outlineText":"海正药业产品X（盐酸米诺环素）","report":{"summary":"患者提到泰尔丝和产品X"}}'
       WHERE user_id=9 AND project_id='product-study'
     `).run();
     store.db.close();
@@ -71,6 +71,7 @@ test("project workspace migration redacts product names across reports and Deck 
     store = await SqliteProjectWorkspaceStore.create(databasePath);
     [workspace] = await store.list(9);
     assert.equal(workspace.projectName, "产品X院外深访");
+    assert.equal(workspace.workspace.outlineText, "产品X");
     assert.equal(workspace.workspace.report.summary, "患者提到泰尔丝和产品X");
     store.db.close();
   } finally {
