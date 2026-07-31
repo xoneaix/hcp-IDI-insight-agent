@@ -1,6 +1,6 @@
 import { interviewIdForType, nextInterviewId, repairInterviewIds, roleDocumentForExport } from "./interview-id.js?v=20260725.2";
 import { flattenQuestionGroups, groupOutlineQuestions, groupsFromQuestions, normalizeQuestionGroups } from "./outline-structure.js?v=20260725.2";
-import { createPreviewWorkspace } from "./preview-data.js?v=20260731.1";
+import { createPreviewWorkspace } from "./preview-data.js?v=20260731.2";
 import { trialUserIdentity } from "./user-identity.js?v=20260726.1";
 
 const DEFAULT_PROJECT_ID = "default";
@@ -439,7 +439,7 @@ function applyPreviewWorkspace() {
 }
 
 function previewBlockedMessage() {
-  toast("当前为“功能导览”只读模式。登录或申请试用后即可上传、分析、编辑与导出。", 4200);
+  toast("当前为“访客模式”。登录或申请试用后即可上传、分析、编辑与导出。", 4200);
 }
 
 function previewActionAllowed(target) {
@@ -463,15 +463,15 @@ function configurePreviewMode() {
   $("#previewModeBadge").hidden = false;
   $("#adminAccess").hidden = true;
   $("#portalLogout").hidden = true;
-  $("#modeLabel").textContent = "只读导览";
+  $("#modeLabel").textContent = "访客只读";
   $("#modeLabel").style.color = "#dff25b";
   $("#apiSettingsLabel").textContent = "功能已锁定";
   $("#apiSettingsButton").classList.remove("connected");
   $("#trialUserCard").hidden = false;
-  $("#trialUserInitials").textContent = "DE";
-  $("#trialUserName").textContent = "功能导览";
-  $("#trialUserEmail").textContent = "脱敏示例 · 只读浏览";
-  document.title = "MedVoice Insight｜功能导览";
+  $("#trialUserInitials").textContent = "VM";
+  $("#trialUserName").textContent = "访客模式";
+  $("#trialUserEmail").textContent = "空白工作区 · 只读浏览";
+  document.title = "MedVoice Insight｜访客模式";
 }
 
 async function syncProjectWorkspaces() {
