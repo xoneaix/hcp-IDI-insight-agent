@@ -2539,6 +2539,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname.startsWith("/api/export/")) return await handleExport(req, res, url.pathname.split("/").pop());
     if (req.method === "GET") {
       if (url.pathname === "/login" || url.pathname === "/login.html") return await serveStatic("/login.html", res);
+      if (url.pathname === "/preview" || url.pathname === "/preview/") return await serveStatic("/index.html", res);
       if (url.pathname === "/admin" || url.pathname === "/admin.html") {
         const user = await currentUser(req);
         if (AUTH_REQUIRED && !user) return redirect(res, "/login");

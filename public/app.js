@@ -1,5 +1,6 @@
 import { interviewIdForType, nextInterviewId, repairInterviewIds, roleDocumentForExport } from "./interview-id.js?v=20260725.2";
 import { flattenQuestionGroups, groupOutlineQuestions, groupsFromQuestions, normalizeQuestionGroups } from "./outline-structure.js?v=20260725.2";
+import { createPreviewWorkspace } from "./preview-data.js?v=20260731.1";
 import { trialUserIdentity } from "./user-identity.js?v=20260726.1";
 
 const DEFAULT_PROJECT_ID = "default";
@@ -152,7 +153,8 @@ const state = {
   evidenceSearch: "",
   expandedGapQuestionIndex: null,
   overviewGuideFilter: "all",
-  overviewInsightFilter: "all"
+  overviewInsightFilter: "all",
+  previewMode: location.pathname === "/preview" || new URLSearchParams(location.search).get("mode") === "preview"
 };
 let outlineRenameGuideId = "";
 let deckSnapshotGeneration = 0;
@@ -178,6 +180,27 @@ const LOCAL_DB_VERSION = 1;
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const escapeHTML = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
+
+const PREVIEW_ALLOWED_SELECTOR = [
+  ".nav-item",
+  "[data-view-jump]",
+  "[data-insight-filter]",
+  "[data-overview-guide]",
+  "[data-matrix-guide]",
+  ".insight-item",
+  ".role-toggle",
+  ".confidence-info-button",
+  ".ledger-question-button",
+  ".ledger-sample-button",
+  ".report-dynamic-toc a",
+  "#deckPreviewPrev",
+  "#deckPreviewNext",
+  "[data-deck-slide]",
+  "#matrixVerticalScrollHint",
+  "#matrixHorizontalScrollHint",
+  "dialog .dialog-close",
+  "#previewLoginLink"
+].join(",");
 
 function safeProjectId(value) {
   return String(value || DEFAULT_PROJECT_ID).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) || DEFAULT_PROJECT_ID;
@@ -209,6 +232,7 @@ function loadProjects() {
 }
 
 function saveProjects() {
+  if (state.previewMode) return;
   localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(state.projects));
   localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, state.activeProjectId);
 }
@@ -359,6 +383,7 @@ function scheduleProjectWorkspaceSave(project, workspace) {
 }
 
 function saveCurrentProjectWorkspace() {
+  if (state.previewMode) return;
   const workspace = currentProjectWorkspaceSnapshot();
   localStorage.setItem(projectDataKey(), JSON.stringify(workspace));
   scheduleProjectWorkspaceSave({ ...currentProject() }, workspace);
@@ -389,6 +414,64 @@ function loadCurrentProjectWorkspace() {
   state.overviewInsightFilter = "all";
   state.reportWorkspace = normalizedReportWorkspace(data.reportWorkspace);
   applyOutlineGuideToState();
+}
+
+function applyPreviewWorkspace() {
+  const preview = createPreviewWorkspace();
+  state.projects = [preview.project];
+  state.activeProjectId = preview.project.id;
+  state.projectName = preview.project.name;
+  state.allInterviews = preview.interviews;
+  state.interviews = preview.interviews;
+  state.outlineGuides = preview.guides.map(normalizedOutlineGuide);
+  state.activeOutlineGuideId = state.outlineGuides[0]?.id || "";
+  state.reportWorkspace = normalizedReportWorkspace(preview.reportWorkspace);
+  state.libraryLoaded = true;
+  state.libraryError = "";
+  state.apiConfigured = false;
+  state.apiKeySource = "preview";
+  state.authRequired = true;
+  state.currentUser = null;
+  state.overviewGuideFilter = "all";
+  state.overviewInsightFilter = "all";
+  applyOutlineGuideToState();
+  state.reportWorkspace.sourceFingerprint = reportSourceFingerprint();
+}
+
+function previewBlockedMessage() {
+  toast("当前为“功能导览”只读模式。登录或申请试用后即可上传、分析、编辑与导出。", 4200);
+}
+
+function previewActionAllowed(target) {
+  return Boolean(target?.closest?.(PREVIEW_ALLOWED_SELECTOR));
+}
+
+function guardPreviewInteraction(event) {
+  if (!state.previewMode) return;
+  if (previewActionAllowed(event.target)) return;
+  const actionable = event.target?.closest?.("button,a[href],input,select,textarea,[role='button'],[contenteditable='true']");
+  if (!actionable && !["submit", "change", "input", "drop", "paste"].includes(event.type)) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  previewBlockedMessage();
+}
+
+function configurePreviewMode() {
+  if (!state.previewMode) return;
+  document.body.classList.add("preview-mode");
+  $("#previewModeBanner").hidden = false;
+  $("#previewModeBadge").hidden = false;
+  $("#adminAccess").hidden = true;
+  $("#portalLogout").hidden = true;
+  $("#modeLabel").textContent = "只读导览";
+  $("#modeLabel").style.color = "#dff25b";
+  $("#apiSettingsLabel").textContent = "功能已锁定";
+  $("#apiSettingsButton").classList.remove("connected");
+  $("#trialUserCard").hidden = false;
+  $("#trialUserInitials").textContent = "DE";
+  $("#trialUserName").textContent = "功能导览";
+  $("#trialUserEmail").textContent = "脱敏示例 · 只读浏览";
+  document.title = "MedVoice Insight｜功能导览";
 }
 
 async function syncProjectWorkspaces() {
@@ -728,7 +811,9 @@ function showView(view, options = {}) {
     if (isActive) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   });
-  try { localStorage.setItem(VIEW_STORAGE_KEY, view); } catch {}
+  if (!state.previewMode) {
+    try { localStorage.setItem(VIEW_STORAGE_KEY, view); } catch {}
+  }
   if (options.updateHash !== false && location.hash !== `#${view}`) history.replaceState(null, "", `#${view}`);
   if (options.scroll !== false) window.scrollTo({ top: 0, behavior: "smooth" });
   if (view === "matrix") requestAnimationFrame(updateMatrixScrollState);
@@ -3378,6 +3463,16 @@ $$("[data-insight-filter]").forEach((button) => button.addEventListener("click",
 }));
 $$("dialog .dialog-close").forEach((button) => button.addEventListener("click", () => button.closest("dialog").close()));
 document.addEventListener("click", (event) => { if (!event.target.closest(".confidence-info-button") && !event.target.closest("#confidenceFloatingPopover")) hideConfidencePopover(); });
+["click", "submit", "change", "input", "drop", "paste"].forEach((eventName) => {
+  document.addEventListener(eventName, guardPreviewInteraction, true);
+});
+document.addEventListener("keydown", (event) => {
+  if (!state.previewMode || !["Enter", " "].includes(event.key) || previewActionAllowed(event.target)) return;
+  if (!event.target.closest("button,a[href],input,select,textarea,[role='button']")) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  previewBlockedMessage();
+}, true);
 window.addEventListener("scroll", hideConfidencePopover, true);
 window.addEventListener("resize", hideConfidencePopover);
 $("#cancelAnalysis").addEventListener("click", () => $("#analysisDialog").close());
@@ -3583,6 +3678,13 @@ window.addEventListener("resize", () => {
 
 async function initializeApp() {
   const initialView = savedView(INITIAL_HASH);
+  if (state.previewMode) {
+    applyPreviewWorkspace();
+    showView(initialView, { updateHash: true, scroll: false });
+    renderAll();
+    configurePreviewMode();
+    return;
+  }
   loadProjects();
   loadCurrentProjectWorkspace();
   showView(initialView, { updateHash: true, scroll: false });

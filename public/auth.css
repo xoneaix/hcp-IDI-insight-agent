@@ -38,6 +38,18 @@
 @media(max-width:880px){.auth-brand{min-height:430px;padding:34px 28px}.auth-brand .login-brand-row{grid-template-columns:150px minmax(150px,1fr);gap:18px}.auth-brand .login-logo{width:150px;max-width:100%}.auth-brand .login-brand-text{padding-left:18px}.auth-brand .login-brand-text strong{font-size:34px}.auth-brand .login-brand-text small{font-size:10px;margin-top:9px}.auth-brand .login-brand-text em{font-size:9px;margin-top:8px}.brand-copy{margin:42px 0}.brand-copy h1{font-size:clamp(36px,8vw,52px)}.auth-card{padding:30px}.brand-foot{flex-wrap:wrap}}
 @media(max-width:540px){.auth-brand .login-brand-row{grid-template-columns:112px minmax(0,1fr);gap:13px}.auth-brand .login-logo{width:112px}.auth-brand .login-brand-text{padding-left:13px}.auth-brand .login-brand-text strong{font-size:28px}.auth-brand .login-brand-text small{font-size:8px;letter-spacing:2px}.auth-brand .login-brand-text em{white-space:normal;line-height:1.5}.brand-eyebrow{font-size:8px;letter-spacing:1.4px}.brand-capabilities{gap:7px}.brand-capabilities span{font-size:9px;padding:7px 9px}.auth-main{padding:20px}.auth-card{padding:26px 22px;border-radius:19px}.auth-card h2{font-size:26px}}
 
+.preview-entry{display:grid;gap:8px;margin-top:2px;text-align:center}
+.preview-entry>span{display:flex;align-items:center;gap:10px;color:#a2aca7;font-size:9px}
+.preview-entry>span::before,.preview-entry>span::after{content:"";height:1px;flex:1;background:#edf0ee}
+.preview-entry>a{display:grid;grid-template-columns:34px minmax(0,1fr) auto;grid-template-rows:auto auto;align-items:center;gap:1px 10px;padding:11px 12px;border:1px solid #cfded6;border-radius:11px;background:linear-gradient(135deg,#f7fbf8,#eef5f1);color:var(--green);text-align:left;text-decoration:none;transition:border-color .18s,box-shadow .18s,transform .18s}
+.preview-entry>a:hover{border-color:#91b2a3;box-shadow:0 9px 24px rgba(30,75,61,.09);transform:translateY(-1px)}
+.preview-entry>a i{grid-row:1/3;display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:#deeee6;color:#2f6d58}
+.preview-entry>a svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.preview-entry>a b{font-size:12px}
+.preview-entry>a small{color:#71817a;font-size:9px}
+.preview-entry>a em{grid-column:3;grid-row:1/3;font-style:normal;font-size:16px}
+.preview-entry>p{margin:0!important;color:#98a29d!important;font-size:8px!important;line-height:1.5!important}
+
 /* Shared slashed-zero numeric language for login and access administration. */
 :root{--font-digital:"DM Mono","Noto Sans SC",Arial,sans-serif}
 body,button,input,textarea,select,option{font-family:var(--font-digital)}

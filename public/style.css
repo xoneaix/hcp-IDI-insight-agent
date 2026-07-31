@@ -1000,6 +1000,33 @@ body,body *{font-variant-numeric:tabular-nums slashed-zero!important;font-featur
 .nav-item.active::before{opacity:1;transform:translateY(-50%) scaleY(1)}
 .nav-item.active i{border-color:rgba(223,242,91,.16);background:rgba(223,242,91,.11);color:var(--lime);box-shadow:0 0 0 3px rgba(223,242,91,.025)}
 .nav-item.active em{border-color:rgba(223,242,91,.12);background:rgba(223,242,91,.1);color:#f0f8b4}
+
+/* Public feature tour: desensitized, read-only product exploration. */
+.preview-mode-badge{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid #c9ddd3;border-radius:999px;background:#edf6f1;color:#2e6a56;font-size:9px;font-weight:700;white-space:nowrap}
+.preview-mode-badge[hidden],.preview-mode-banner[hidden]{display:none!important}
+.preview-mode-badge i{color:#72a98f;font-style:normal}
+.preview-mode-banner{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:16px clamp(24px,3vw,50px) -6px;padding:11px 14px;border:1px solid #d4e2db;border-radius:13px;background:linear-gradient(100deg,#edf6f1 0%,#f8faf8 68%,#fbfbe9 100%);box-shadow:0 7px 20px rgba(27,67,54,.035)}
+.preview-mode-banner>div{display:flex;align-items:center;gap:11px;min-width:0}
+.preview-mode-banner>div>span{display:grid;place-items:center;width:31px;height:31px;flex:0 0 31px;border-radius:9px;background:#dceee5;color:#2e735a;font:600 16px "DM Mono"}
+.preview-mode-banner p,.preview-mode-banner strong,.preview-mode-banner small{display:block;margin:0}
+.preview-mode-banner strong{color:#244c40;font-size:11px}
+.preview-mode-banner small{margin-top:2px;color:#72817b;font-size:9px;line-height:1.55}
+.preview-mode-banner>a{display:inline-flex;align-items:center;gap:8px;flex:0 0 auto;padding:9px 12px;border-radius:9px;background:#255f4e;color:#fff;font-size:10px;font-weight:700;text-decoration:none;box-shadow:0 7px 18px rgba(27,76,61,.13)}
+.preview-mode-banner>a:hover{background:#1e5142}
+body.preview-mode .project-switcher{border-color:rgba(223,242,91,.13);background:rgba(255,255,255,.045)}
+body.preview-mode .project-switcher::after{content:"READ ONLY";display:inline-flex;margin-top:8px;padding:3px 6px;border:1px solid rgba(223,242,91,.15);border-radius:5px;color:#dff25b;font:500 7px "DM Mono";letter-spacing:1px}
+body.preview-mode .upload-zone,body.preview-mode .outline-dropzone,body.preview-mode .deck-instruction-panel{position:relative;background-color:#f7faf8}
+body.preview-mode .upload-zone::after,body.preview-mode .outline-dropzone::after,body.preview-mode .deck-instruction-panel::after{content:"只读导览";position:absolute;right:12px;top:10px;padding:4px 7px;border:1px solid #d4e1db;border-radius:999px;background:rgba(255,255,255,.92);color:#5a776c;font-size:8px;font-weight:700}
+body.preview-mode input,body.preview-mode select,body.preview-mode textarea{cursor:not-allowed}
+body.preview-mode .view button,body.preview-mode .project-switcher button,body.preview-mode .project-switcher select,body.preview-mode .topbar button{cursor:not-allowed}
+body.preview-mode .nav-item,body.preview-mode [data-view-jump],body.preview-mode [data-insight-filter],body.preview-mode [data-overview-guide],body.preview-mode [data-matrix-guide],body.preview-mode .insight-item,body.preview-mode .role-toggle,body.preview-mode .confidence-info-button,body.preview-mode .ledger-question-button,body.preview-mode .ledger-sample-button,body.preview-mode #deckPreviewPrev,body.preview-mode #deckPreviewNext,body.preview-mode [data-deck-slide],body.preview-mode .matrix-scroll-hint{cursor:pointer}
+body.preview-mode #apiSettingsButton{opacity:.58}
+
+@media(max-width:720px){
+  .preview-mode-banner{align-items:flex-start;flex-direction:column;margin:12px 16px -8px}
+  .preview-mode-banner>a{width:100%;justify-content:center}
+  .preview-mode-badge{display:none}
+}
 .agent-status{border-color:rgba(223,242,91,.14);background:linear-gradient(145deg,rgba(9,27,23,.32),rgba(9,27,23,.19));box-shadow:inset 0 1px rgba(255,255,255,.025)}
 .user-card{margin-top:10px;padding:10px 9px;border:1px solid rgba(255,255,255,.09);border-radius:11px;background:rgba(255,255,255,.04)}
 .user-card>span{border:1px solid rgba(223,242,91,.14);background:rgba(223,242,91,.08);color:#e8f593}

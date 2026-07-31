@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" href="assets/medvoice-logo-v4.webp" as="image" type="image/webp" fetchpriority="high" />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=20260727.2" />
+    <link rel="stylesheet" href="style.css?v=20260731.1" />
   </head>
   <body>
     <div class="app-shell">
@@ -58,11 +58,17 @@
         <header class="topbar">
           <div class="breadcrumb"><span>定性研究</span><b>/</b><strong id="breadcrumbProject">未命名访谈项目</strong></div>
           <div class="top-actions">
+            <span class="preview-mode-badge" id="previewModeBadge" hidden><i>◉</i> 功能导览 · 只读</span>
             <div class="privacy-badge"><i>◆</i> 合规保护已开启</div>
             <button class="api-connect" id="apiSettingsButton"><i></i><span id="apiSettingsLabel">连接 AI</span></button>
             <button class="secondary-button" id="adminAccess" hidden>Access 管理</button>
           </div>
         </header>
+
+        <aside class="preview-mode-banner" id="previewModeBanner" hidden>
+          <div><span aria-hidden="true">◎</span><p><strong>正在浏览脱敏演示工作区</strong><small>可以切换全部模块、查看示例证据与报告；上传、录音、编辑、分析、导出及账号管理均已锁定。</small></p></div>
+          <a id="previewLoginLink" href="/login">登录或申请试用 <span aria-hidden="true">→</span></a>
+        </aside>
 
         <section class="view active" id="overview-view">
           <div class="hero-row">
@@ -374,6 +380,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="app.js?v=20260730.1"></script>
+    <script type="module" src="app.js?v=20260731.1"></script>
   </body>
 </html>
