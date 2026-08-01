@@ -202,6 +202,7 @@ const PREVIEW_ALLOWED_SELECTOR = [
   "[data-deck-slide]",
   "#matrixVerticalScrollHint",
   "#matrixHorizontalScrollHint",
+  "#complianceBadgeButton",
   "dialog .dialog-close",
   "#previewLoginLink"
 ].join(",");
@@ -4051,13 +4052,14 @@ function createProject() {
 }
 
 function closeSidebarPopovers(except = null) {
-  for (const menu of [$("#projectPickerMenu"), $("#projectActionsMenu"), $("#accountMenu")]) {
+  for (const menu of [$("#projectPickerMenu"), $("#projectActionsMenu"), $("#accountMenu"), $("#compliancePopover")]) {
     if (!menu || menu === except) continue;
     menu.hidden = true;
   }
   $("#projectPickerButton")?.setAttribute("aria-expanded", String(except === $("#projectPickerMenu")));
   $("#projectMenuButton")?.setAttribute("aria-expanded", String(except === $("#projectActionsMenu")));
   $("#trialUserCard")?.setAttribute("aria-expanded", String(except === $("#accountMenu")));
+  $("#complianceBadgeButton")?.setAttribute("aria-expanded", String(except === $("#compliancePopover")));
 }
 
 function toggleSidebarPopover(menu, trigger) {
@@ -4131,6 +4133,7 @@ $("#projectPickerMenu").addEventListener("click", (event) => {
   setActiveProject(entry.dataset.projectId);
 });
 $("#trialUserCard").addEventListener("click", (event) => toggleSidebarPopover($("#accountMenu"), event.currentTarget));
+$("#complianceBadgeButton").addEventListener("click", (event) => toggleSidebarPopover($("#compliancePopover"), event.currentTarget));
 $("#accountProfile").addEventListener("click", () => {
   closeSidebarPopovers();
   toast(`${state.currentUser?.email || "当前账户"} · ${state.currentUser?.role === "admin" ? "管理员" : "试用用户"}`);
@@ -4139,7 +4142,7 @@ $("#accountAdmin").addEventListener("click", () => { location.href = ADMIN_URL; 
 $("#accountHelp").addEventListener("click", () => { closeSidebarPopovers(); showHelp(); });
 $("#accountLogout").addEventListener("click", () => { closeSidebarPopovers(); logoutPortal(); });
 document.addEventListener("click", (event) => {
-  if (!event.target.closest(".project-name-row,.trial-user-card,.account-menu")) closeSidebarPopovers();
+  if (!event.target.closest(".project-name-row,.trial-user-card,.account-menu,.compliance-control")) closeSidebarPopovers();
 });
 document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeSidebarPopovers(); });
 if ("ResizeObserver" in window) new ResizeObserver(updateProjectNameOverflow).observe($(".project-name-viewport"));

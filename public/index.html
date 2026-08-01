@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" href="assets/medvoice-logo-v4.webp" as="image" type="image/webp" fetchpriority="high" />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=20260801.4" />
+    <link rel="stylesheet" href="style.css?v=20260801.5" />
   </head>
   <body>
     <div class="app-shell">
@@ -47,9 +47,10 @@
 
         <div class="agent-status">
           <div><span class="pulse"></span><strong>Insight Engine</strong><em id="modeLabel">检查连接…</em></div>
-          <p><i>✓</i> 证据可追溯</p>
-          <p><i>✓</i> 隐私字段脱敏</p>
-          <p><i>✓</i> 人工复核保留</p>
+          <p><i>✓</i> 受控账号访问</p>
+          <p><i>✓</i> 敏感字段脱敏</p>
+          <p><i>✓</i> 原话证据可追溯</p>
+          <p><i>✓</i> AI 草案人工复核</p>
         </div>
 
         <button class="user-card trial-user-card" id="trialUserCard" type="button" aria-label="当前试用用户" aria-haspopup="menu" aria-expanded="false" hidden>
@@ -75,7 +76,20 @@
           <div class="breadcrumb"><span>定性研究</span><b>/</b><strong id="breadcrumbProject">未命名访谈项目</strong></div>
           <div class="top-actions">
             <span class="preview-mode-badge" id="previewModeBadge" hidden><i>◉</i> 访客模式 · 只读</span>
-            <div class="privacy-badge"><span aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m10 3 7 7-7 7-7-7Z"/></svg></span><b>合规保护已开启</b></div>
+            <div class="compliance-control">
+              <button class="privacy-badge" id="complianceBadgeButton" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="compliancePopover"><span aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m10 2.5 6 2.2v4.8c0 3.8-2.2 6.4-6 8-3.8-1.6-6-4.2-6-8V4.7Z"/><path d="m7.4 9.8 1.7 1.7 3.6-3.8"/></svg></span><b>合规辅助已启用</b><i aria-hidden="true">⌄</i></button>
+              <aside class="compliance-popover" id="compliancePopover" role="dialog" aria-label="MedVoice 合规辅助说明" hidden>
+                <div class="compliance-popover-head"><div><span>COMPLIANCE ASSIST</span><strong>研究数据保护控制</strong></div><em><i></i>运行中</em></div>
+                <div class="compliance-control-list">
+                  <article><i>01</i><div><strong>受控访问与账号隔离</strong><small>企业账号、受保护会话及按账号/项目隔离的数据访问。</small></div></article>
+                  <article><i>02</i><div><strong>敏感字段基础脱敏</strong><small>分析文本中的手机号、身份证号、邮箱及预设研究标识会被替换或移除。</small></div></article>
+                  <article><i>03</i><div><strong>原话证据链可追溯</strong><small>洞察保留样本编号、问题映射与逐字引文，便于人工回看核验。</small></div></article>
+                  <article><i>04</i><div><strong>AI 草案人工复核</strong><small>AI 负责辅助整理，研究、医学与合规人员保留最终判断责任。</small></div></article>
+                </div>
+                <div class="compliance-boundary"><strong>使用边界</strong><p>音视频及必要文本会传输至当前连接的 AI 服务。正式处理真实访谈前，仍须完成知情同意、最小必要、数据驻留与供应商评估、保留/删除期限及审计要求确认。</p></div>
+                <small class="compliance-disclaimer">“已启用”表示产品控制正在运行，不代表已取得法律认证或替代公司审批。</small>
+              </aside>
+            </div>
             <button class="api-connect" id="apiSettingsButton"><i></i><span id="apiSettingsLabel">连接 AI</span></button>
             <button class="admin-console-button" id="adminAccess" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4h12v12H4zM7 8h6M7 12h4"/></svg><span id="adminAccessLabel">管理控制台</span><em id="adminAccessCount" hidden>0</em></button>
           </div>
@@ -397,6 +411,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="app.js?v=20260801.4"></script>
+    <script type="module" src="app.js?v=20260801.5"></script>
   </body>
 </html>
