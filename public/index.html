@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preload" href="assets/medvoice-logo-v4.webp" as="image" type="image/webp" fetchpriority="high" />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=20260801.2" />
+    <link rel="stylesheet" href="style.css?v=20260801.3" />
   </head>
   <body>
     <div class="app-shell">
@@ -68,11 +68,6 @@
           <button id="accountLogout" type="button" role="menuitem"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 4H5.5A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8M11.5 6.5 15 10l-3.5 3.5M7.5 10H15"/></svg><span>退出登录</span></button>
         </div>
 
-        <div class="sidebar-utilities" aria-label="辅助操作">
-          <button class="utility-button help-button" id="helpButton" aria-label="帮助" title="查看使用流程"><span aria-hidden="true"><svg viewBox="0 0 18 18"><path d="M6.8 6.3a2.3 2.3 0 0 1 4.4.9c0 1.8-2.2 2.1-2.2 3.4M9 13.3h.01"/></svg></span><b>Help</b></button>
-          <button class="utility-button logout-button" id="portalLogout" aria-label="退出登录" title="退出登录" hidden><span aria-hidden="true"><svg viewBox="0 0 18 18"><path d="M7.2 3.6H4.6a1.6 1.6 0 0 0-1.6 1.6v7.6a1.6 1.6 0 0 0 1.6 1.6h2.6M10.2 5.4 13.8 9l-3.6 3.6M6.7 9h7"/></svg></span><b>Log out</b></button>
-        </div>
-
       </aside>
 
       <main>
@@ -80,7 +75,7 @@
           <div class="breadcrumb"><span>定性研究</span><b>/</b><strong id="breadcrumbProject">未命名访谈项目</strong></div>
           <div class="top-actions">
             <span class="preview-mode-badge" id="previewModeBadge" hidden><i>◉</i> 访客模式 · 只读</span>
-            <div class="privacy-badge"><i>◆</i> 合规保护已开启</div>
+            <div class="privacy-badge"><span aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m10 3 7 7-7 7-7-7Z"/></svg></span><b>合规保护已开启</b></div>
             <button class="api-connect" id="apiSettingsButton"><i></i><span id="apiSettingsLabel">连接 AI</span></button>
             <button class="admin-console-button" id="adminAccess" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4h12v12H4zM7 8h6M7 12h4"/></svg><span id="adminAccessLabel">管理控制台</span><em id="adminAccessCount" hidden>0</em></button>
           </div>
@@ -402,6 +397,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="app.js?v=20260801.2"></script>
+    <script type="module" src="app.js?v=20260801.3"></script>
   </body>
 </html>

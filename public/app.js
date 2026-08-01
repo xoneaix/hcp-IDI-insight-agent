@@ -472,7 +472,6 @@ function configurePreviewMode() {
   $("#previewModeBanner").hidden = false;
   $("#previewModeBadge").hidden = false;
   $("#adminAccess").hidden = true;
-  $("#portalLogout").hidden = true;
   $("#modeLabel").textContent = "访客只读";
   $("#modeLabel").style.color = "#dff25b";
   $("#apiSettingsLabel").textContent = "功能已锁定";
@@ -973,7 +972,6 @@ async function checkPortalSession() {
     const isAdmin = data.user?.role === "admin" && state.authRequired;
     $("#adminAccess").hidden = !isAdmin;
     $("#accountAdmin").hidden = !isAdmin;
-    $("#portalLogout").hidden = !state.authRequired;
     if (isAdmin) {
       try {
         const requestsResponse = await fetch(`${API_BASE}/api/admin/requests`, { cache: "no-store" });
@@ -3999,14 +3997,20 @@ $("#matrixVerticalScrollHint").addEventListener("click", () => {
 });
 $("#copyQuote").addEventListener("click", async () => { if (state.currentQuote) { await navigator.clipboard?.writeText(state.currentQuote); toast("原话与来源已复制"); } });
 $("#copyReport").addEventListener("click", async () => { await navigator.clipboard?.writeText($("#reportPaper").innerText); toast("报告全文已复制"); });
-$("#helpButton").addEventListener("click", () => toast("流程：采集/上传 → 逐份转录 → 导入大纲 → 并发分析 → 导出 Excel / Word / PPT"));
+function showHelp() {
+  toast("流程：采集/上传 → 逐份转录 → 导入大纲 → 并发分析 → 导出 Excel / Word / PPT");
+}
+
+async function logoutPortal() {
+  await fetch(`${API_BASE}/api/auth/logout`, { method: "POST", credentials: location.protocol === "file:" ? "include" : "same-origin" });
+  location.href = LOGIN_URL;
+}
 $("#apiSettingsButton").addEventListener("click", () => {
   if (state.apiKeySource === "server") return toast("AI Key 由企业服务端安全管理，无需个人配置");
   if (state.authRequired && state.currentUser?.role !== "admin") return toast("请联系 Portal 管理员配置 AI 服务");
   openApiSettings();
 });
 $("#adminAccess").addEventListener("click", () => { location.href = ADMIN_URL; });
-$("#portalLogout").addEventListener("click", async () => { await fetch(`${API_BASE}/api/auth/logout`, { method: "POST", credentials: location.protocol === "file:" ? "include" : "same-origin" }); location.href = LOGIN_URL; });
 $("#apiSettingsForm").addEventListener("submit", saveApiSettings);
 $("#clearApiKey").addEventListener("click", clearApiSettings);
 $("#cancelApiSettings").addEventListener("click", () => { state.pendingAfterConnect = null; $("#apiSettingsDialog").close(); });
@@ -4132,8 +4136,8 @@ $("#accountProfile").addEventListener("click", () => {
   toast(`${state.currentUser?.email || "当前账户"} · ${state.currentUser?.role === "admin" ? "管理员" : "试用用户"}`);
 });
 $("#accountAdmin").addEventListener("click", () => { location.href = ADMIN_URL; });
-$("#accountHelp").addEventListener("click", () => { closeSidebarPopovers(); $("#helpButton").click(); });
-$("#accountLogout").addEventListener("click", () => { closeSidebarPopovers(); $("#portalLogout").click(); });
+$("#accountHelp").addEventListener("click", () => { closeSidebarPopovers(); showHelp(); });
+$("#accountLogout").addEventListener("click", () => { closeSidebarPopovers(); logoutPortal(); });
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".project-name-row,.trial-user-card,.account-menu")) closeSidebarPopovers();
 });
