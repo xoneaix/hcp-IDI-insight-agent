@@ -3473,10 +3473,6 @@ async function startRecording() {
       const stoppedSession = session || state.recording;
       const durationSeconds = Math.max(1, getRecordingElapsedSeconds(stoppedSession));
       const draftText = String(stoppedSession?.livePreviewText || $("#liveTranscript").textContent || "").replace(/^(正在聆听…|尚未开始)$/u, "").trim();
-      const extension = recorder.mimeType.includes("mp4") ? "m4a" : "webm";
-      const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-      const file = new File([blob], `Live-recording-${timestamp}.${extension}`, { type: blob.type });
       stream.getTracks().forEach((track) => track.stop());
       stopSpeechPreview(stoppedSession);
       clearInterval(stoppedSession?.timer);
@@ -3488,6 +3484,22 @@ async function startRecording() {
       $("#pauseRecording").disabled = true;
       $("#pauseRecording").textContent = "暂停";
       $("#stopRecording").disabled = true;
+      $("#discardRecording").hidden = true;
+      $("#discardRecording").disabled = false;
+      $("#closeRecordingPanel").hidden = false;
+      if (stoppedSession?.discarded) {
+        chunks.length = 0;
+        $("#recordingStatus").textContent = "本次录音已放弃";
+        $("#recordingTime").textContent = "00:00";
+        $("#liveTranscript").textContent = "未保存任何录音文件";
+        setRecordingHint("录音已终止，已采集内容未保存。您可以关闭面板或重新开始。", "warning");
+        toast("本次录音已放弃，未保存任何文件");
+        return;
+      }
+      const extension = recorder.mimeType.includes("mp4") ? "m4a" : "webm";
+      const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const file = new File([blob], `Live-recording-${timestamp}.${extension}`, { type: blob.type });
       setRecordingHint("录音已生成本机备份，正在安全同步到账号资料库。", "active");
       const [newIndex] = await addFiles([file], {
         source: "实时录音",
@@ -3547,6 +3559,9 @@ async function startRecording() {
     $("#pauseRecording").disabled = false;
     $("#pauseRecording").textContent = "暂停";
     $("#stopRecording").disabled = false;
+    $("#discardRecording").hidden = false;
+    $("#discardRecording").disabled = false;
+    $("#closeRecordingPanel").hidden = true;
     $("#liveTranscript").textContent = "正在聆听…";
     setRecordingHint("录音持续采集中；短暂静默不会结束录音。", "active");
     startSpeechPreview(session);
@@ -3614,9 +3629,47 @@ function pauseRecording() {
 function stopRecording() {
   if (state.recording?.recorder && state.recording.recorder.state !== "inactive") {
     state.recording.stopping = true;
+    $("#pauseRecording").disabled = true;
+    $("#stopRecording").disabled = true;
+    $("#discardRecording").disabled = true;
     setRecordingHint("正在封装录音并建立本机备份，请稍候。", "active");
     state.recording.recorder.stop();
   }
+}
+
+function discardRecording() {
+  const current = state.recording;
+  if (!current?.recorder || current.recorder.state === "inactive") return;
+  if (!confirm("确认放弃本次录音？已采集的音频不会保存，且无法恢复。")) return;
+  current.discarded = true;
+  current.stopping = true;
+  $("#pauseRecording").disabled = true;
+  $("#stopRecording").disabled = true;
+  $("#discardRecording").disabled = true;
+  $("#recordingStatus").textContent = "正在放弃录音";
+  setRecordingHint("正在终止录音并清理本次采集内容。", "warning");
+  current.recorder.stop();
+}
+
+function closeRecordingPanel() {
+  if (state.recording?.recorder && state.recording.recorder.state !== "inactive") {
+    toast("录音仍在进行，请先选择“停止并保存”或“放弃本次录音”");
+    return;
+  }
+  $("#recordingConsole").hidden = true;
+  $("#recordingConsole").classList.remove("active");
+  $("#recordingStatus").textContent = "准备录音";
+  $("#recordingHint").textContent = "录音持续采集；停止后将先保存本机备份，再同步到账号。";
+  $("#recordingHint").dataset.tone = "";
+  $("#recordingTime").textContent = "00:00";
+  $("#liveTranscript").textContent = "尚未开始";
+  $("#startRecording").disabled = false;
+  $("#pauseRecording").disabled = true;
+  $("#pauseRecording").textContent = "暂停";
+  $("#stopRecording").disabled = true;
+  $("#discardRecording").hidden = true;
+  $("#discardRecording").disabled = false;
+  $("#closeRecordingPanel").hidden = false;
 }
 
 function startSpeechPreview(session = state.recording) {
@@ -3758,10 +3811,18 @@ $("#clearFiles").addEventListener("click", async () => {
   renderAll();
   toast(`已删除 ${selected.length} 份选中资料`);
 });
-$("#recordButton").addEventListener("click", (event) => { event.stopPropagation(); $("#recordingConsole").hidden = !$("#recordingConsole").hidden; });
+$("#recordButton").addEventListener("click", (event) => {
+  event.stopPropagation();
+  const recordingConsole = $("#recordingConsole");
+  if (recordingConsole.hidden) recordingConsole.hidden = false;
+  else if (state.recording) toast("录音仍在进行，请先选择“停止并保存”或“放弃本次录音”");
+  else closeRecordingPanel();
+});
 $("#startRecording").addEventListener("click", startRecording);
 $("#pauseRecording").addEventListener("click", pauseRecording);
 $("#stopRecording").addEventListener("click", stopRecording);
+$("#discardRecording").addEventListener("click", discardRecording);
+$("#closeRecordingPanel").addEventListener("click", closeRecordingPanel);
 $("#selectAllRoleDocs").addEventListener("click", () => {
   const completed = roleMappedInterviews();
   const shouldSelectAll = selectedRoleDocuments().length !== completed.length;

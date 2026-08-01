@@ -159,7 +159,7 @@
                 <label class="auto-transcribe"><input id="autoTranscribeRecording" type="checkbox" checked /> 停止保存后自动转录</label>
               </div>
               <div class="recording-time" id="recordingTime">00:00</div>
-              <div class="recording-actions"><button class="primary-button" id="startRecording">开始</button><button class="secondary-button" id="pauseRecording" disabled>暂停</button><button class="stop-button" id="stopRecording" disabled>停止并保存</button></div>
+              <div class="recording-actions"><button class="primary-button" id="startRecording">开始</button><button class="secondary-button" id="pauseRecording" disabled>暂停</button><button class="stop-button" id="stopRecording" disabled>停止并保存</button><button class="discard-recording-button" id="discardRecording" type="button" hidden>放弃本次录音</button><button class="recording-close-button" id="closeRecordingPanel" type="button">关闭面板</button></div>
               <div class="live-transcript"><small>实时语音预览（静默不会停止录音；预览连接中断会自动恢复，最终以 AI 转录为准）</small><p id="liveTranscript">尚未开始</p></div>
             </div>
           </article>
