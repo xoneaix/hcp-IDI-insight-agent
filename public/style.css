@@ -44,16 +44,18 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 
 /* Refined ChatGPT-style project and account navigation. */
 .project-switcher{position:relative;padding:14px;margin-bottom:16px;border-color:rgba(255,255,255,.12);border-radius:15px;background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.035));box-shadow:inset 0 1px rgba(255,255,255,.035)}
-.project-name-row{position:relative;grid-template-columns:minmax(0,1fr) 32px;gap:4px;margin-top:8px}
+.project-name-row{position:relative;grid-template-columns:minmax(0,1fr) 0;gap:0;margin-top:8px;transition:grid-template-columns .18s ease,gap .18s ease}
+.project-name-row:hover,.project-name-row:focus-within{grid-template-columns:minmax(0,1fr) 32px;gap:4px}
 .project-switcher .project-current-button,.project-switcher .project-more-button{display:flex;align-items:center;height:34px;margin:0;border:0;border-radius:9px;background:transparent;color:#f4f8f6;padding:0;cursor:pointer;transition:background .16s,color .16s}
-.project-switcher .project-current-button{min-width:0;gap:6px;padding:0 7px;font-size:13px;font-weight:700}
+.project-switcher .project-current-button{min-width:0;gap:6px;padding:0 7px;font-size:12px;font-weight:500;letter-spacing:.05px}
 .project-switcher .project-current-button:hover,.project-switcher .project-more-button:hover,.project-switcher .project-more-button[aria-expanded="true"]{background:rgba(255,255,255,.095)}
 .project-current-button>svg{width:14px;height:14px;flex:0 0 auto;fill:none;stroke:#a8beb6;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .project-name-viewport{display:block;min-width:0;flex:1;overflow:hidden;white-space:nowrap}
 #projectNameScroller{display:inline-block;min-width:max-content;will-change:transform}
-.project-name-viewport.is-overflowing:hover #projectNameScroller{animation:projectNamePan 3.4s ease-in-out .2s infinite alternate}
+.project-name-viewport.is-overflowing:hover #projectNameScroller{animation:projectNamePan 2.1s ease-in-out .15s infinite alternate}
 @keyframes projectNamePan{0%,10%{transform:translateX(0)}90%,100%{transform:translateX(calc(-1 * var(--project-scroll-distance)))}}
-.project-switcher .project-more-button{display:grid;place-items:center;width:32px;padding:0;color:#b6c9c2;font:700 13px/1 system-ui;letter-spacing:1px}
+.project-switcher .project-more-button{display:grid;place-items:center;width:32px;padding:0;color:#b6c9c2;font:700 13px/1 system-ui;letter-spacing:1px;opacity:0;pointer-events:none;transform:translateX(4px);transition:opacity .15s ease,transform .15s ease}
+.project-name-row:hover .project-more-button,.project-name-row:focus-within .project-more-button,.project-more-button[aria-expanded="true"]{opacity:1;pointer-events:auto;transform:translateX(0)}
 .project-native-select{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important;clip-path:inset(50%)!important}
 .sidebar-popover{position:absolute;z-index:90;border:1px solid rgba(255,255,255,.12);border-radius:13px;background:#263d38;color:#eff5f1;box-shadow:0 22px 54px rgba(3,18,14,.34);padding:6px;overflow:hidden}
 .sidebar-popover[hidden]{display:none!important}
@@ -303,7 +305,7 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 @media(max-width:1050px){.medvoice-logo{width:54px;flex-basis:54px}.medvoice-logo img{width:54px;height:auto}.brand-stacked{align-items:center}.brand-copy,.project-mini-actions{display:none}.brand strong,.brand small{font-size:inherit}}
 
 /* Compact project rename affordance */
-.project-name-row{display:grid;grid-template-columns:minmax(0,1fr) 28px;align-items:center;gap:6px;margin-top:7px}
+.project-name-row{display:grid;align-items:center;margin-top:7px}
 .project-name-row .project-select-wrap{margin-top:0}
 .project-edit-button{display:grid;place-items:center;width:28px;height:28px;border:1px solid rgba(255,255,255,.14);border-radius:8px;background:rgba(255,255,255,.055);color:#cfe0da;cursor:pointer;padding:0}
 .project-edit-button svg{display:block;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
@@ -336,6 +338,7 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
   .app-shell{grid-template-columns:252px minmax(0,1fr)}
   .sidebar{padding-left:20px;padding-right:20px}
   .project-switcher small{font-size:11px}
+  .project-switcher .project-current-button{font-size:14px}
   .project-select-wrap select{font-size:14px}
   .project-mini-actions button{font-size:11px}
   .nav-item{font-size:14px;padding-top:11px;padding-bottom:11px}

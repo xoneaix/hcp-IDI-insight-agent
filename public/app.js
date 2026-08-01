@@ -4142,6 +4142,7 @@ document.addEventListener("click", (event) => {
   if (!event.target.closest(".project-name-row,.trial-user-card,.account-menu")) closeSidebarPopovers();
 });
 document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeSidebarPopovers(); });
+if ("ResizeObserver" in window) new ResizeObserver(updateProjectNameOverflow).observe($(".project-name-viewport"));
 window.addEventListener("hashchange", () => showView(savedView(), { updateHash: false }));
 window.addEventListener("resize", () => {
   updateProjectNameOverflow();
