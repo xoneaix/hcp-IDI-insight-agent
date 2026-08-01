@@ -24,6 +24,7 @@ import { AuthStore } from "./lib/auth-store.mjs";
 import { PostgresAuthStore } from "./lib/postgres-auth-store.mjs";
 import { PostgresInterviewLibraryStore, SqliteInterviewLibraryStore } from "./lib/interview-library-store.mjs";
 import { PostgresProjectWorkspaceStore, SqliteProjectWorkspaceStore } from "./lib/project-workspace-store.mjs";
+import { buildMedicalTranscriptionContext } from "./lib/transcription-context.mjs";
 import { redactProductNames, redactProductReferences } from "./public/compliance-redaction.js";
 import {
   mailConfigured,
@@ -1919,8 +1920,10 @@ async function handleTranscribe(req, res) {
   if (file.data.length > DIRECT_AUDIO_LIMIT) throw new Error("该文件超过安全直传大小，请使用大型文件自动分片转录");
   const durationPart = parts.find((part) => part.name === "durationSeconds");
   const modePart = parts.find((part) => part.name === "transcriptionMode");
+  const termsPart = parts.find((part) => part.name === "transcriptionTerms");
   const mode = normalizeTranscriptionMode(modePart?.data?.toString("utf8") || req.headers["x-transcribe-mode"]);
-  const result = await transcribeUploadedMedia(file.data, file.filename, file.headers.match(/content-type:\s*([^\r\n]+)/i)?.[1] || "application/octet-stream", durationPart?.data?.toString("utf8"), mode);
+  const context = transcriptionContextFromRequest(req, termsPart?.data?.toString("utf8"));
+  const result = await transcribeUploadedMedia(file.data, file.filename, file.headers.match(/content-type:\s*([^\r\n]+)/i)?.[1] || "application/octet-stream", durationPart?.data?.toString("utf8"), mode, context);
   json(res, 200, redactProductReferences(result));
 }
 
@@ -2129,21 +2132,46 @@ function humanizeOpenAIError(error) {
   return message || "未知错误";
 }
 
-async function requestTranscription(bytes, filename, mimeType, mode) {
+function transcriptionContextFromRequest(req, explicitTerms = "") {
+  let headerTerms = "";
+  try {
+    headerTerms = decodeURIComponent(String(req.headers["x-transcription-terms"] || ""));
+  } catch {
+    headerTerms = String(req.headers["x-transcription-terms"] || "");
+  }
+  return buildMedicalTranscriptionContext({ terms: explicitTerms || headerTerms });
+}
+
+async function requestTranscription(bytes, filename, mimeType, mode, context = {}) {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       const form = new FormData();
       form.append("file", new Blob([bytes], { type: mimeType }), filename);
-      const model = mode === "diarize" ? "gpt-4o-transcribe-diarize" : "whisper-1";
+      const model = mode === "diarize"
+        ? "gpt-4o-transcribe-diarize"
+        : mode === "gpt-4o"
+          ? "gpt-4o-transcribe"
+          : mode === "whisper"
+            ? "whisper-1"
+            : "gpt-transcribe";
       if (mode === "diarize") {
         form.append("model", model);
         form.append("response_format", "diarized_json");
         form.append("chunking_strategy", "auto");
+      } else if (mode === "contextual" || mode === "gpt-4o") {
+        form.append("model", model);
+        form.append("response_format", "json");
+        if (context.prompt) form.append("prompt", context.prompt);
+        if (mode === "contextual") {
+          for (const keyword of context.keywords || []) form.append("keywords[]", keyword);
+          for (const language of context.languages || []) form.append("languages[]", language);
+        }
       } else {
         form.append("model", model);
         form.append("response_format", "verbose_json");
         form.append("timestamp_granularities[]", "segment");
+        if (context.prompt) form.append("prompt", context.prompt);
       }
       const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
         method: "POST",
@@ -2183,16 +2211,30 @@ function transcriptionModeFromRequest(req) {
   return normalizeTranscriptionMode(req.headers["x-transcribe-mode"] || req.headers["x-transcription-mode"]);
 }
 
-async function transcribeAudioBytes(bytes, filename, mimeType = "audio/mp4", mode = "diarize") {
+async function transcribeAudioBytes(bytes, filename, mimeType = "audio/mp4", mode = "diarize", context = {}) {
   if (bytes.length > DIRECT_AUDIO_LIMIT) throw new Error("音频分片仍超过 24 MB，请缩短分片后重试");
   if (normalizeTranscriptionMode(mode) === "fast") {
-    const data = await requestTranscription(bytes, filename, mimeType, "whisper").catch((error) => {
-      throw new Error(`快速转录失败${error.status ? ` (${error.status})` : ""}：${humanizeOpenAIError(error)}`);
-    });
+    let data;
+    let transcriptionMode = "fast-contextual";
+    try {
+      data = await requestTranscription(bytes, filename, mimeType, "contextual", context);
+    } catch (primaryError) {
+      const modelUnavailable = [400, 403, 404].includes(primaryError.status) && /model|access|permission|not found|unsupported|keyword|language/i.test(primaryError.message || "");
+      if (!modelUnavailable) throw new Error(`医疗语境转录失败${primaryError.status ? ` (${primaryError.status})` : ""}：${humanizeOpenAIError(primaryError)}`);
+      try {
+        data = await requestTranscription(bytes, filename, mimeType, "gpt-4o", context);
+        transcriptionMode = "gpt-4o-contextual-fallback";
+      } catch (secondaryError) {
+        data = await requestTranscription(bytes, filename, mimeType, "whisper", context).catch((error) => {
+          throw new Error(`医疗语境模型不可用，兼容转录也失败${error.status ? ` (${error.status})` : ""}：${humanizeOpenAIError(error)}`);
+        });
+        transcriptionMode = "whisper-context-fallback";
+      }
+    }
     return {
       ...data,
       segments: (data.segments || []).map((segment) => ({ ...segment, speaker: "待语义识别" })),
-      transcription_mode: "fast-whisper"
+      transcription_mode: transcriptionMode
     };
   }
   try {
@@ -2201,7 +2243,7 @@ async function transcribeAudioBytes(bytes, filename, mimeType = "audio/mp4", mod
   } catch (primaryError) {
     const modelUnavailable = [400, 403, 404].includes(primaryError.status) && /model|diariz|access|permission|not found|unsupported/i.test(primaryError.message || "");
     if (!modelUnavailable) throw new Error(`OpenAI 转录失败${primaryError.status ? ` (${primaryError.status})` : ""}：${humanizeOpenAIError(primaryError)}`);
-    const fallback = await requestTranscription(bytes, filename, mimeType, "whisper").catch((error) => {
+    const fallback = await requestTranscription(bytes, filename, mimeType, "whisper", context).catch((error) => {
       throw new Error(`说话人转录模型不可用，兼容转录也失败${error.status ? ` (${error.status})` : ""}：${error.message}`);
     });
     return {
@@ -2212,7 +2254,7 @@ async function transcribeAudioBytes(bytes, filename, mimeType = "audio/mp4", mod
   }
 }
 
-async function transcribeUploadedMedia(bytes, filename, mimeType = "application/octet-stream", fallbackDuration, mode = "diarize") {
+async function transcribeUploadedMedia(bytes, filename, mimeType = "application/octet-stream", fallbackDuration, mode = "diarize", context = {}) {
   const jobId = randomUUID();
   const sourcePath = join(JOB_DIR, `medvoice-direct-source-${jobId}${safeUploadSuffix(filename)}`);
   const audioPath = join(JOB_DIR, `medvoice-direct-audio-${jobId}.m4a`);
@@ -2223,26 +2265,27 @@ async function transcribeUploadedMedia(bytes, filename, mimeType = "application/
     } catch (conversionError) {
       const directSupported = /\.(mp3|mp4|mpeg|mpga|m4a|wav|webm)$/i.test(filename || "") || /^audio\//i.test(mimeType) || /^video\//i.test(mimeType);
       if (!directSupported) throw conversionError;
-      const result = await transcribeAudioBytes(bytes, filename, mimeType, mode);
+      const result = await transcribeAudioBytes(bytes, filename, mimeType, mode, context);
       return { ...result, preprocessed: false };
     }
     const audioBytes = await readFile(audioPath);
     const duration = await mediaDurationSeconds(audioPath, fallbackDuration).catch(() => Number(fallbackDuration) || undefined);
-    const result = await transcribeAudioBytes(audioBytes, "interview-audio.m4a", "audio/mp4", mode);
+    const result = await transcribeAudioBytes(audioBytes, "interview-audio.m4a", "audio/mp4", mode, context);
     return Number.isFinite(duration) && duration > 0 ? { ...result, duration, preprocessed: true } : { ...result, preprocessed: true };
   } finally {
     await Promise.all([sourcePath, audioPath].map((path) => unlink(path).catch(() => {})));
   }
 }
 
-async function transcribeAudioFile(path, filename, mode = "diarize") {
-  return transcribeAudioBytes(await readFile(path), filename, "audio/mp4", mode);
+async function transcribeAudioFile(path, filename, mode = "diarize", context = {}) {
+  return transcribeAudioBytes(await readFile(path), filename, "audio/mp4", mode, context);
 }
 
 async function transcribeLargeMediaFile(sourcePath, fallbackDuration, options = {}) {
   const jobId = randomUUID();
   const chunkPaths = [];
   const mode = normalizeTranscriptionMode(options.mode);
+  const baseContext = options.context || buildMedicalTranscriptionContext();
   const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
   try {
     onProgress({ stage: "detecting", progress: 3, message: "正在读取媒体时长并准备分片" });
@@ -2258,8 +2301,13 @@ async function transcribeLargeMediaFile(sourcePath, fallbackDuration, options = 
       await extractAudioChunk(sourcePath, chunkPath, start, chunkDuration);
       let result;
       try {
-        onProgress({ stage: "transcribing", chunkIndex: index + 1, chunkCount, progress: Math.round(((index + 0.35) / chunkCount) * 92) + 4, message: `正在转录第 ${index + 1}/${chunkCount} 段${mode === "fast" ? "（快速模式）" : "（说话人识别）"}` });
-        result = await transcribeAudioFile(chunkPath, `interview-part-${index + 1}.m4a`, mode);
+        onProgress({ stage: "transcribing", chunkIndex: index + 1, chunkCount, progress: Math.round(((index + 0.35) / chunkCount) * 92) + 4, message: `正在转录第 ${index + 1}/${chunkCount} 段${mode === "fast" ? "（医疗语境精校）" : "（说话人识别）"}` });
+        const previousTranscript = results.length ? results.at(-1).text : "";
+        const chunkContext = buildMedicalTranscriptionContext({
+          terms: baseContext.keywords,
+          previousTranscript
+        });
+        result = await transcribeAudioFile(chunkPath, `interview-part-${index + 1}.m4a`, mode, chunkContext);
       } catch (error) {
         throw new Error(`第 ${index + 1}/${chunkCount} 个音频分片转录失败：${error.message}`);
       }
@@ -2277,7 +2325,13 @@ async function transcribeLargeMediaFile(sourcePath, fallbackDuration, options = 
       duration,
       chunks: chunkCount,
       preprocessed: true,
-      transcription_mode: mode === "fast" ? "fast-whisper" : results.some((result) => result.mode === "whisper-fallback") ? "whisper-fallback" : "speaker-diarization"
+      transcription_mode: mode === "fast"
+        ? results.some((result) => result.mode === "whisper-context-fallback")
+          ? "whisper-context-fallback"
+          : results.some((result) => result.mode === "gpt-4o-contextual-fallback")
+            ? "gpt-4o-contextual-fallback"
+            : "fast-contextual"
+        : results.some((result) => result.mode === "whisper-fallback") ? "whisper-fallback" : "speaker-diarization"
     };
   } finally {
     await Promise.all(chunkPaths.map((path) => unlink(path).catch(() => {})));
@@ -2317,11 +2371,12 @@ function updateTranscriptionJob(id, patch) {
   Object.assign(job, patch, { updatedAt: Date.now() });
 }
 
-async function runLargeTranscriptionJob(jobId, sourcePath, fallbackDuration, mode, removeSource = true) {
+async function runLargeTranscriptionJob(jobId, sourcePath, fallbackDuration, mode, context, removeSource = true) {
   try {
     updateTranscriptionJob(jobId, { status: "running", stage: "queued", progress: 1, message: "文件已上传，正在进入转录队列" });
     const result = await transcribeLargeMediaFile(sourcePath, fallbackDuration, {
       mode,
+      context,
       onProgress: (progress) => updateTranscriptionJob(jobId, { status: "running", ...progress })
     });
     updateTranscriptionJob(jobId, { status: "completed", stage: "completed", progress: 100, message: "全部分片转录完成", result });
@@ -2341,6 +2396,7 @@ async function handleLargeTranscribeJobStart(req, res) {
   } catch {}
   const id = randomUUID();
   const mode = transcriptionModeFromRequest(req);
+  const context = transcriptionContextFromRequest(req);
   const sourcePath = join(JOB_DIR, `medvoice-source-${id}${safeUploadSuffix(originalName)}`);
   await streamUploadToFile(req, sourcePath);
   const job = {
@@ -2356,7 +2412,7 @@ async function handleLargeTranscribeJobStart(req, res) {
     updatedAt: Date.now()
   };
   transcriptionJobs.set(id, job);
-  runLargeTranscriptionJob(id, sourcePath, req.headers["x-media-duration"], mode);
+  runLargeTranscriptionJob(id, sourcePath, req.headers["x-media-duration"], mode, context);
   return json(res, 202, publicTranscriptionJob(job));
 }
 
@@ -2377,7 +2433,10 @@ async function handleLargeTranscribe(req, res) {
   const sourcePath = join(JOB_DIR, `medvoice-source-${jobId}${safeUploadSuffix(originalName)}`);
   try {
     await streamUploadToFile(req, sourcePath);
-    return json(res, 200, redactProductReferences(await transcribeLargeMediaFile(sourcePath, req.headers["x-media-duration"], { mode: transcriptionModeFromRequest(req) })));
+    return json(res, 200, redactProductReferences(await transcribeLargeMediaFile(sourcePath, req.headers["x-media-duration"], {
+      mode: transcriptionModeFromRequest(req),
+      context: transcriptionContextFromRequest(req)
+    })));
   } finally {
     await unlink(sourcePath).catch(() => {});
   }
@@ -2392,11 +2451,12 @@ async function handleStoredTranscribeJobStart(req, res, userId, itemId) {
   const fileInfo = await stat(item.storagePath).catch(() => null);
   if (!fileInfo?.isFile()) return json(res, 404, { error: "原始访谈文件已不在服务端，请重新上传" });
   if (fileInfo.size <= DIRECT_AUDIO_LIMIT) {
-    const result = await transcribeStoredLibraryItem(userId, itemId, transcriptionModeFromRequest(req));
+    const result = await transcribeStoredLibraryItem(userId, itemId, transcriptionModeFromRequest(req), transcriptionContextFromRequest(req));
     return json(res, 200, redactProductReferences({ status: "completed", result }));
   }
   const id = randomUUID();
   const mode = transcriptionModeFromRequest(req);
+  const context = transcriptionContextFromRequest(req);
   const job = {
     id,
     userId,
@@ -2410,19 +2470,19 @@ async function handleStoredTranscribeJobStart(req, res, userId, itemId) {
     updatedAt: Date.now()
   };
   transcriptionJobs.set(id, job);
-  runLargeTranscriptionJob(id, item.storagePath, item.durationSeconds, mode, false);
+  runLargeTranscriptionJob(id, item.storagePath, item.durationSeconds, mode, context, false);
   return json(res, 202, publicTranscriptionJob(job));
 }
 
-async function transcribeStoredLibraryItem(userId, id, mode = "diarize") {
+async function transcribeStoredLibraryItem(userId, id, mode = "diarize", context = buildMedicalTranscriptionContext()) {
   if (!API_KEY) throw new Error("尚未连接 AI 服务；请先完成 AI 服务配置。");
   const item = await libraryStore.getItem(userId, id);
   if (!item?.storagePath) throw new Error("没有找到该账号下的访谈原始文件");
   const fileInfo = await stat(item.storagePath).catch(() => null);
   if (!fileInfo?.isFile()) throw new Error("原始访谈文件已不在服务端，请重新上传");
-  if (fileInfo.size > DIRECT_AUDIO_LIMIT) return transcribeLargeMediaFile(item.storagePath, item.durationSeconds, { mode });
+  if (fileInfo.size > DIRECT_AUDIO_LIMIT) return transcribeLargeMediaFile(item.storagePath, item.durationSeconds, { mode, context });
   const bytes = await readFile(item.storagePath);
-  return transcribeUploadedMedia(bytes, item.fileName || item.name, item.mimeType, item.durationSeconds, mode);
+  return transcribeUploadedMedia(bytes, item.fileName || item.name, item.mimeType, item.durationSeconds, mode, context);
 }
 
 async function handleLibrary(req, res, pathname) {
@@ -2485,7 +2545,7 @@ async function handleLibrary(req, res, pathname) {
   if (transcribeJobMatch && req.method === "POST") return handleStoredTranscribeJobStart(req, res, user.id, transcribeJobMatch[1]);
   const transcribeMatch = pathname.match(/^\/api\/library\/items\/([^/]+)\/transcribe$/);
   if (transcribeMatch && req.method === "POST") {
-    const result = await transcribeStoredLibraryItem(user.id, transcribeMatch[1], transcriptionModeFromRequest(req));
+    const result = await transcribeStoredLibraryItem(user.id, transcribeMatch[1], transcriptionModeFromRequest(req), transcriptionContextFromRequest(req));
     return json(res, 200, redactProductReferences(result));
   }
   if (req.method === "DELETE" && pathname === "/api/library/items") {

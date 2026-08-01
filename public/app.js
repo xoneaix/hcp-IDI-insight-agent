@@ -6,6 +6,7 @@ import { redactProductNames, redactProductReferences } from "./compliance-redact
 
 const DEFAULT_PROJECT_ID = "default";
 const DEFAULT_PROJECT_NAME = "未命名访谈项目";
+const TRANSCRIPTION_TERMS_STORAGE_KEY = "medvoice-transcription-terms-v1";
 const PRODUCT_X_DECK_TITLE = "产品X院外深访：从首购到复购，患者如何决定“该吃药了”";
 const REQUIRED_INSIGHT_DIMENSIONS = ["决策路径", "核心阻碍", "疗效诉求", "安全顾虑", "信息与信任", "话术风险", "院外复购风险"];
 const DEFAULT_DECK_INSTRUCTIONS = "以研究洞察报告为唯一内容主骨架，完整纳入决策路径、核心阻碍、疗效诉求、安全顾虑、信息与信任、话术风险、院外复购风险、跨场景原话证据、全部市场策略优先级和研究边界；核心阻碍、疗效诉求、话术风险、院外复购风险分别独立成页；每项策略写明证据基础、适用场景、行动与验证方式；以商业图表、路径、对比、证据链或优先级地图呈现，避免纯文字堆叠。";
@@ -1700,6 +1701,17 @@ function selectedTranscriptionMode() {
   return "fast";
 }
 
+function transcriptionTerms() {
+  return String($("#recordMedicalTerms")?.value || "GLP-1、细胞靶点").trim().slice(0, 1200);
+}
+
+function transcriptionHeaders(mode) {
+  return {
+    "X-Transcribe-Mode": mode,
+    "X-Transcription-Terms": encodeURIComponent(transcriptionTerms())
+  };
+}
+
 function estimatedChunkCount(item) {
   const duration = Number(item.durationSeconds);
   if (Number.isFinite(duration) && duration > 0) return Math.max(1, Math.ceil(duration / 600));
@@ -1712,7 +1724,7 @@ function startTranscriptionTicker(item, index, phase, estimatedChunks, mode) {
     if (!["大型文件处理中", "转录中", "快速转录中"].includes(item.status)) return;
     const elapsed = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
     const chunkText = estimatedChunks ? ` · 预计 ${estimatedChunks} 个分片` : "";
-    const modeText = mode === "fast" ? "快速模式" : "说话人识别模式";
+    const modeText = mode === "fast" ? "医疗语境模式" : "说话人识别模式";
     item.progressText = `${phase}${chunkText} · 已等待 ${formatDuration(elapsed)} · ${modeText}`;
     if (state.interviews[index] === item) renderTranscripts();
   }, 9000);
@@ -1770,7 +1782,7 @@ async function pollTranscriptionJob(jobId, index, item, estimatedChunks, options
 async function createStoredTranscriptionJob(item, mode) {
   const startResponse = await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}/transcribe/jobs`, {
     method: "POST",
-    headers: { "X-Transcribe-Mode": mode }
+    headers: transcriptionHeaders(mode)
   });
   const job = await startResponse.json().catch(() => ({}));
   if (!startResponse.ok) throw new Error(job.error?.message || job.error || "创建资料库转录任务失败");
@@ -1783,11 +1795,15 @@ function applyTranscriptionResult(item, data) {
   );
   item.roleResult = null;
   item.status = "已转录";
-  item.progressText = data.transcription_mode === "fast-whisper"
-    ? "快速转录完成：逐字稿已建立，可继续点击“区分所选访谈角色”。"
-    : data.transcription_mode === "whisper-fallback"
-      ? "已使用兼容转录模式，建议复核说话人角色"
-      : "说话人分段已建立";
+  item.progressText = data.transcription_mode === "fast-contextual"
+    ? "医疗语境精校完成：专业术语与中英文缩写已结合上下文识别，可继续区分角色。"
+    : data.transcription_mode === "gpt-4o-contextual-fallback"
+      ? "已使用兼容医疗语境模型完成转录，建议复核少见专业术语。"
+      : data.transcription_mode === "whisper-context-fallback"
+        ? "已使用兼容转录模式并注入医疗语境，建议复核少见专业术语。"
+        : data.transcription_mode === "whisper-fallback"
+          ? "已使用兼容转录模式，建议复核说话人角色"
+          : "说话人分段已建立";
   if (data.duration) item.duration = formatDuration(data.duration);
   if (data.duration) item.durationSeconds = data.duration;
 }
@@ -1820,7 +1836,7 @@ async function transcribeInterview(index, options = {}) {
   item.error = "";
   item.progressText = isLarge
     ? `正在从账号资料库创建后台分片转录任务${estimatedChunks ? `（预计 ${estimatedChunks} 段）` : ""}`
-    : mode === "fast" ? "正在快速转录音频为逐字稿" : "正在发送音频并识别说话人";
+    : mode === "fast" ? "正在结合医疗语境精校音频逐字稿" : "正在发送音频并识别说话人";
   item.status = isLarge ? "大型文件处理中" : mode === "fast" ? "快速转录中" : "转录中";
   renderTranscripts();
   try {
@@ -1844,7 +1860,7 @@ async function transcribeInterview(index, options = {}) {
       ticker = startTranscriptionTicker(item, index, "服务端资料正在转录", estimatedChunks, mode);
       response = await fetch(`${API_BASE}/api/library/items/${encodeURIComponent(item.serverId)}/transcribe`, {
         method: "POST",
-        headers: { "X-Transcribe-Mode": mode }
+        headers: transcriptionHeaders(mode)
       });
       data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error?.message || data.error || "转录失败");
@@ -1855,7 +1871,7 @@ async function transcribeInterview(index, options = {}) {
         headers: {
           "Content-Type": item.file.type || "application/octet-stream",
           "X-Filename": encodeURIComponent(item.fileName || redactProductNames(item.file.name)),
-          "X-Transcribe-Mode": mode,
+          ...transcriptionHeaders(mode),
           ...(Number.isFinite(item.durationSeconds) ? { "X-Media-Duration": String(item.durationSeconds) } : {})
         },
         body: item.file
@@ -1870,10 +1886,11 @@ async function transcribeInterview(index, options = {}) {
         restartFromLibrary: item.serverId ? () => createStoredTranscriptionJob(item, mode) : null
       });
     } else {
-      ticker = startTranscriptionTicker(item, index, mode === "fast" ? "正在快速转录" : "正在识别说话人", 0, mode);
+      ticker = startTranscriptionTicker(item, index, mode === "fast" ? "正在进行医疗语境精校" : "正在识别说话人", 0, mode);
       const form = new FormData();
       form.append("file", item.file);
       form.append("transcriptionMode", mode);
+      form.append("transcriptionTerms", transcriptionTerms());
       if (Number.isFinite(item.durationSeconds)) form.append("durationSeconds", String(item.durationSeconds));
       response = await fetch(`${API_BASE}/api/transcribe`, { method: "POST", body: form });
       data = await response.json().catch(() => ({}));
@@ -3689,6 +3706,17 @@ function startSpeechPreview(session = state.recording) {
   recognition.lang = $("#recordLanguage").value;
   recognition.continuous = true;
   recognition.interimResults = true;
+  const SpeechGrammarList = window.SpeechGrammarList || window.webkitSpeechGrammarList;
+  if (SpeechGrammarList) {
+    const terms = transcriptionTerms().split(/[，,、;；\n]+/u).map((term) => term.trim()).filter(Boolean).slice(0, 30);
+    if (terms.length) {
+      try {
+        const grammarList = new SpeechGrammarList();
+        grammarList.addFromString(`#JSGF V1.0; grammar medvoice; public <term> = ${terms.join(" | ")} ;`, 1);
+        recognition.grammars = grammarList;
+      } catch {}
+    }
+  }
   recognition.onstart = () => {
     if (state.recording !== session || generation !== session.speechPreviewGeneration) return;
     setRecordingHint("录音持续采集中；实时文字预览已连接。", "active");
@@ -3817,6 +3845,9 @@ $("#recordButton").addEventListener("click", (event) => {
   if (recordingConsole.hidden) recordingConsole.hidden = false;
   else if (state.recording) toast("录音仍在进行，请先选择“停止并保存”或“放弃本次录音”");
   else closeRecordingPanel();
+});
+$("#recordMedicalTerms")?.addEventListener("change", (event) => {
+  try { localStorage.setItem(TRANSCRIPTION_TERMS_STORAGE_KEY, String(event.target.value || "").slice(0, 1200)); } catch {}
 });
 $("#startRecording").addEventListener("click", startRecording);
 $("#pauseRecording").addEventListener("click", pauseRecording);
@@ -3987,6 +4018,10 @@ window.addEventListener("resize", () => {
 
 async function initializeApp() {
   const initialView = savedView(INITIAL_HASH);
+  try {
+    const savedTerms = localStorage.getItem(TRANSCRIPTION_TERMS_STORAGE_KEY);
+    if (savedTerms && $("#recordMedicalTerms")) $("#recordMedicalTerms").value = savedTerms;
+  } catch {}
   if (state.previewMode) {
     applyPreviewWorkspace();
     showView(initialView, { updateHash: true, scroll: false });
