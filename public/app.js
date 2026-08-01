@@ -176,6 +176,8 @@ const DELETED_INTERVIEWS_STORAGE_KEY = "medvoice.deletedInterviews";
 const INITIAL_HASH = location.hash;
 const LARGE_CONVERSION_CHUNK_THRESHOLD = 80 * 1024 * 1024;
 const CONVERSION_CHUNK_SIZE = 8 * 1024 * 1024;
+const LIBRARY_CHUNK_THRESHOLD = 12 * 1024 * 1024;
+const LIBRARY_CHUNK_SIZE = 8 * 1024 * 1024;
 const LOCAL_DB_NAME = "medvoice-interview-library";
 const LOCAL_DB_VERSION = 1;
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -658,12 +660,86 @@ async function downloadConversionResult(job, options = {}) {
 
 function humanizeFileTransferError(message = "") {
   if (/failed to fetch|networkerror|load failed|network request failed/i.test(message)) {
-    return "网络或大文件上传连接中断。当前资料已保留本机备份；请等待网络稳定后重试，系统会对大视频自动分片上传。";
+    return "网络或大文件上传连接中断。当前资料已保留本机备份；请等待网络稳定后重试，系统会对长录音和大视频自动分片上传。";
   }
   if (/413|too large|content too large|payload too large|request entity too large/i.test(message)) {
     return "文件体积较大，服务器拒绝了单次上传。请点击“转录”，系统会自动分片上传、转换为 M4A 后再转录。";
   }
   return message || "未知错误";
+}
+
+async function fetchWithUploadRetry(url, options, retryOptions = {}) {
+  const attempts = Math.max(1, retryOptions.attempts || 4);
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), retryOptions.timeoutMs || 90_000);
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      if (response.ok || (response.status < 500 && ![408, 425, 429].includes(response.status))) return response;
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || `服务器暂时不可用（${response.status}）`);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts) break;
+      retryOptions.onRetry?.(attempt + 1, attempts);
+      await delay(Math.min(5_000, 700 * (2 ** (attempt - 1))));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw lastError || new Error("分片上传失败");
+}
+
+async function uploadLibraryItemChunked(item, onProgress) {
+  const file = item.file;
+  const chunkCount = Math.ceil(file.size / LIBRARY_CHUNK_SIZE);
+  const startResponse = await fetchWithUploadRetry(`${API_BASE}/api/library/uploads/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      meta: interviewPayload(item),
+      fileName: item.fileName || item.name || file.name,
+      mimeType: file.type || item.mimeType || "application/octet-stream",
+      fileSize: file.size,
+      chunkCount
+    })
+  }, { attempts: 3, timeoutMs: 30_000 });
+  const start = await startResponse.json().catch(() => ({}));
+  if (!startResponse.ok) throw new Error(start.error || "创建资料库分片上传任务失败");
+
+  for (let index = 0; index < chunkCount; index += 1) {
+    const begin = index * LIBRARY_CHUNK_SIZE;
+    const chunk = file.slice(begin, Math.min(file.size, begin + LIBRARY_CHUNK_SIZE), "application/octet-stream");
+    const uploadPart = () => fetchWithUploadRetry(`${API_BASE}/api/library/uploads/${encodeURIComponent(start.id)}/chunks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream", "X-Chunk-Index": String(index) },
+      body: chunk
+    }, {
+      attempts: 5,
+      timeoutMs: 90_000,
+      onRetry: (attempt, total) => {
+        item.progressText = `第 ${index + 1}/${chunkCount} 片网络中断，正在自动重试（${attempt}/${total}）`;
+        renderTranscripts();
+      }
+    });
+    const chunkResponse = await uploadPart();
+    const chunkData = await chunkResponse.json().catch(() => ({}));
+    if (!chunkResponse.ok) throw new Error(chunkData.error || `第 ${index + 1} 个资料分片上传失败`);
+    onProgress(Math.min(96, Math.max(3, Math.round(((index + 1) / chunkCount) * 96))));
+    item.progressText = `长录音正在分片保存（${index + 1}/${chunkCount} · ${Math.round(((index + 1) / chunkCount) * 100)}%）`;
+    renderTranscripts();
+  }
+
+  item.progressText = "分片上传完成，正在校验并写入账号资料库";
+  renderTranscripts();
+  const completeResponse = await fetchWithUploadRetry(`${API_BASE}/api/library/uploads/${encodeURIComponent(start.id)}/complete`, {
+    method: "POST"
+  }, { attempts: 4, timeoutMs: 90_000 });
+  const completed = await completeResponse.json().catch(() => ({}));
+  if (!completeResponse.ok) throw new Error(completed.error || "资料分片合并失败");
+  onProgress(100);
+  return completed;
 }
 
 async function uploadChunkedConversionJob(file, item) {
@@ -1295,11 +1371,15 @@ async function persistInterview(index) {
         body: JSON.stringify(interviewPayload(item))
       });
     } else if (item.file) {
-      response = await uploadLibraryItem(item, (percent) => {
+      const progressHandler = (percent) => {
         item.uploadProgress = percent;
         item.progressText = `正在保存到账号资料库（${percent}%）`;
         renderTranscripts();
-      });
+      };
+      const shouldChunkUpload = item.file.size >= LIBRARY_CHUNK_THRESHOLD || Number(item.durationSeconds || 0) >= 45 * 60;
+      response = shouldChunkUpload
+        ? await uploadLibraryItemChunked(item, progressHandler)
+        : await uploadLibraryItem(item, progressHandler);
     } else {
       return;
     }
@@ -1702,20 +1782,33 @@ async function transcribeInterview(index, options = {}) {
   if (!health) return toast("请先启动 MedVoice 本地服务");
   if (!state.apiConfigured) return openApiSettings(() => transcribeInterview(index));
   const fileSize = item.file?.size || item.fileSize || 0;
-  const isLarge = fileSize > 24 * 1024 * 1024;
+  const isLarge = fileSize > 24 * 1024 * 1024 || Number(item.durationSeconds || 0) >= 45 * 60;
   const mode = selectedTranscriptionMode();
   const estimatedChunks = estimatedChunkCount(item);
+  if (isLarge && item.file && !item.serverId) {
+    item.status = "大型文件处理中";
+    item.progressText = "长录音将先分片保存到账号，再由服务器继续转录";
+    renderTranscripts();
+    await persistInterview(index);
+    if (!item.serverId) {
+      item.status = "录音已保存";
+      item.progressText = "本机备份完整；账号同步尚未完成。网络稳定后再次点击“转录”即可续传。";
+      await saveLocalInterview(index);
+      renderAll();
+      return toast("长录音尚未同步到账号，已保留本机备份；系统不会重复上传转录文件。", 7000);
+    }
+  }
   let ticker = null;
   item.error = "";
   item.progressText = isLarge
-    ? `正在上传并创建后台转录任务${estimatedChunks ? `（预计 ${estimatedChunks} 段）` : ""}，请勿关闭页面`
+    ? `正在从账号资料库创建后台分片转录任务${estimatedChunks ? `（预计 ${estimatedChunks} 段）` : ""}`
     : mode === "fast" ? "正在快速转录音频为逐字稿" : "正在发送音频并识别说话人";
   item.status = isLarge ? "大型文件处理中" : mode === "fast" ? "快速转录中" : "转录中";
   renderTranscripts();
   try {
     let data;
     let response;
-    if (!item.file && item.serverId && isLarge) {
+    if (item.serverId && isLarge) {
       ticker = startTranscriptionTicker(item, index, "正在读取账号资料库大文件", estimatedChunks, mode);
       const job = await createStoredTranscriptionJob(item, mode);
       clearInterval(ticker);
@@ -3343,25 +3436,41 @@ async function startRecording() {
     const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((type) => MediaRecorder.isTypeSupported(type)) || "";
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
     const chunks = [];
-    recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+    let session = null;
+    recorder.ondataavailable = (event) => {
+      if (!event.data.size) return;
+      chunks.push(event.data);
+      if (session) {
+        session.lastChunkAt = Date.now();
+        session.chunkCount += 1;
+        session.recordedBytes += event.data.size;
+      }
+    };
+    recorder.onerror = (event) => {
+      if (!session || state.recording !== session) return;
+      session.captureError = event.error?.message || "浏览器录音连接异常";
+      setRecordingHint("录音连接出现异常；系统将保存已采集片段，请点击“停止并保存”后重试。", "error");
+    };
     recorder.onstop = async () => {
-      const session = state.recording;
-      const durationSeconds = Math.max(1, getRecordingElapsedSeconds(session));
-      const draftText = String(session?.livePreviewText || $("#liveTranscript").textContent || "").replace(/^(正在聆听…|尚未开始)$/u, "").trim();
+      const stoppedSession = session || state.recording;
+      const durationSeconds = Math.max(1, getRecordingElapsedSeconds(stoppedSession));
+      const draftText = String(stoppedSession?.livePreviewText || $("#liveTranscript").textContent || "").replace(/^(正在聆听…|尚未开始)$/u, "").trim();
       const extension = recorder.mimeType.includes("mp4") ? "m4a" : "webm";
       const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
       const file = new File([blob], `Live-recording-${timestamp}.${extension}`, { type: blob.type });
       stream.getTracks().forEach((track) => track.stop());
-      stopSpeechPreview();
-      clearInterval(session?.timer);
-      state.recording = null;
+      stopSpeechPreview(stoppedSession);
+      clearInterval(stoppedSession?.timer);
+      clearTimeout(stoppedSession?.speechRestartTimer);
+      if (state.recording === stoppedSession) state.recording = null;
       $("#recordingConsole").classList.remove("active");
       $("#recordingStatus").textContent = "录音已保存";
       $("#startRecording").disabled = false;
       $("#pauseRecording").disabled = true;
       $("#pauseRecording").textContent = "暂停";
       $("#stopRecording").disabled = true;
+      setRecordingHint("录音已生成本机备份，正在安全同步到账号资料库。", "active");
       const [newIndex] = await addFiles([file], {
         source: "实时录音",
         type: $("#recordRespondentType").value,
@@ -3370,14 +3479,49 @@ async function startRecording() {
         recordedAt: new Date().toLocaleString("zh-CN", { hour12: false })
       });
       if (Number.isInteger(newIndex) && $("#autoTranscribeRecording").checked) {
-        toast("录音已同步至“已导入资料”，正在自动转录", 4000);
-        await transcribeInterview(newIndex);
+        const item = state.interviews[newIndex];
+        if (item?.serverId) {
+          toast("录音已保存至账号资料库，正在从服务器分片转录", 4000);
+          await transcribeInterview(newIndex);
+        } else {
+          item.status = "录音已保存";
+          item.progressText = "本机备份完整；账号同步成功后再启动转录，避免长录音重复上传。";
+          await saveLocalInterview(newIndex);
+          renderAll();
+          toast("录音已安全保存在本机；账号同步尚未完成，请网络稳定后点击“转录”重试保存。", 8000);
+        }
       } else {
         toast("录音已同步至“已导入资料”，可点击“转录”后区分角色", 4500);
       }
     };
-    recorder.start(1000);
-    state.recording = { recorder, stream, startedAt: Date.now(), pausedAt: 0, pauseStarted: null, livePreviewText: "", timer: setInterval(updateRecordingTime, 500) };
+    const now = Date.now();
+    session = {
+      recorder,
+      stream,
+      startedAt: now,
+      pausedAt: 0,
+      pauseStarted: null,
+      livePreviewText: "",
+      speechFinalText: "",
+      lastSpeechPreviewActivity: now,
+      lastChunkAt: now,
+      chunkCount: 0,
+      recordedBytes: 0,
+      speechPreviewGeneration: 0,
+      speechPreviewStopping: false,
+      timer: null
+    };
+    state.recording = session;
+    recorder.start(10_000);
+    session.timer = setInterval(updateRecordingTime, 500);
+    for (const track of stream.getAudioTracks()) {
+      track.onended = () => {
+        if (state.recording !== session || recorder.state === "inactive") return;
+        setRecordingHint("麦克风连接已中断，正在保存已采集片段。", "error");
+        session.stopping = true;
+        recorder.stop();
+      };
+    }
     $("#recordingConsole").classList.add("active");
     $("#recordingStatus").textContent = "正在录音";
     $("#recordingTime").textContent = "00:00";
@@ -3386,7 +3530,8 @@ async function startRecording() {
     $("#pauseRecording").textContent = "暂停";
     $("#stopRecording").disabled = false;
     $("#liveTranscript").textContent = "正在聆听…";
-    startSpeechPreview();
+    setRecordingHint("录音持续采集中；短暂静默不会结束录音。", "active");
+    startSpeechPreview(session);
   } catch (error) {
     toast(error.name === "NotAllowedError" ? "麦克风权限未开启" : `无法开始录音：${error.message}`);
   }
@@ -3400,8 +3545,29 @@ function getRecordingElapsedSeconds(session, now = Date.now()) {
 
 function updateRecordingTime() {
   if (!state.recording) return;
-  const seconds = getRecordingElapsedSeconds(state.recording);
+  const session = state.recording;
+  const seconds = getRecordingElapsedSeconds(session);
   $("#recordingTime").textContent = formatDuration(seconds);
+  const now = Date.now();
+  if (session.recorder.state === "recording" && now - session.lastChunkAt > 25_000) {
+    try { session.recorder.requestData(); } catch {}
+    session.lastChunkAt = now;
+  }
+  const quietSeconds = Math.floor((now - session.lastSpeechPreviewActivity) / 1000);
+  if (session.recorder.state === "paused") {
+    setRecordingHint("录音已暂停；点击“继续”后恢复采集。", "warning");
+  } else if (session.speechPreviewSupported && !session.speechPreviewFatal && quietSeconds >= 60) {
+    setRecordingHint(`已静默约 ${Math.max(1, Math.floor(quietSeconds / 60))} 分钟，录音仍在持续；恢复说话后文字预览会自动重连。`, "warning");
+  } else if (seconds >= 50 * 60) {
+    setRecordingHint("长录音持续采集中；停止后将自动分片保存与转录，无需重新开始。", "active");
+  }
+}
+
+function setRecordingHint(message, tone = "") {
+  const hint = $("#recordingHint");
+  if (!hint) return;
+  if (hint.textContent !== message) hint.textContent = message;
+  hint.dataset.tone = tone;
 }
 
 function pauseRecording() {
@@ -3409,6 +3575,7 @@ function pauseRecording() {
   if (!current) return;
   if (current.recorder.state === "recording") {
     current.recorder.pause();
+    pauseSpeechPreview(current);
     current.pauseStarted = Date.now();
     updateRecordingTime();
     $("#pauseRecording").textContent = "继续";
@@ -3417,6 +3584,9 @@ function pauseRecording() {
     current.pausedAt += Date.now() - current.pauseStarted;
     current.pauseStarted = null;
     current.recorder.resume();
+    current.lastSpeechPreviewActivity = Date.now();
+    current.speechPreviewStopping = false;
+    startSpeechPreview(current);
     updateRecordingTime();
     $("#pauseRecording").textContent = "暂停";
     $("#recordingStatus").textContent = "正在录音";
@@ -3425,38 +3595,80 @@ function pauseRecording() {
 
 function stopRecording() {
   if (state.recording?.recorder && state.recording.recorder.state !== "inactive") {
+    state.recording.stopping = true;
+    setRecordingHint("正在封装录音并建立本机备份，请稍候。", "active");
     state.recording.recorder.stop();
   }
 }
 
-function startSpeechPreview() {
+function startSpeechPreview(session = state.recording) {
+  if (!session || state.recording !== session || session.recorder.state !== "recording") return;
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
+    session.speechPreviewSupported = false;
     $("#liveTranscript").textContent = "当前浏览器不支持实时文字预览；录音仍会正常保存并支持 AI 中英文转录。";
     return;
   }
+  session.speechPreviewSupported = true;
+  session.speechPreviewFatal = false;
+  clearTimeout(session.speechRestartTimer);
+  session.speechPreviewStopping = false;
+  const generation = ++session.speechPreviewGeneration;
   const recognition = new SpeechRecognition();
   recognition.lang = $("#recordLanguage").value;
   recognition.continuous = true;
   recognition.interimResults = true;
-  let finalText = "";
+  recognition.onstart = () => {
+    if (state.recording !== session || generation !== session.speechPreviewGeneration) return;
+    setRecordingHint("录音持续采集中；实时文字预览已连接。", "active");
+  };
   recognition.onresult = (event) => {
     let interim = "";
     for (let index = event.resultIndex; index < event.results.length; index += 1) {
       const text = event.results[index][0].transcript;
-      if (event.results[index].isFinal) finalText += `${text} `; else interim += text;
+      if (event.results[index].isFinal) session.speechFinalText += `${text} `; else interim += text;
     }
-    const previewText = finalText + interim;
+    session.lastSpeechPreviewActivity = Date.now();
+    const previewText = session.speechFinalText + interim;
     $("#liveTranscript").textContent = previewText;
-    if (state.recording) state.recording.livePreviewText = previewText;
+    session.livePreviewText = previewText;
   };
-  recognition.onerror = () => {};
-  recognition.start();
-  state.recording.recognition = recognition;
+  recognition.onerror = (event) => {
+    if (state.recording !== session || generation !== session.speechPreviewGeneration) return;
+    const fatal = ["not-allowed", "service-not-allowed", "audio-capture"].includes(event.error);
+    session.speechPreviewFatal = fatal;
+    setRecordingHint(
+      fatal ? "实时文字预览不可用，但原始录音仍在持续采集。" : "录音仍在持续；实时文字预览连接中断，正在自动恢复。",
+      "warning"
+    );
+  };
+  recognition.onend = () => {
+    if (state.recording !== session || generation !== session.speechPreviewGeneration) return;
+    session.recognition = null;
+    if (session.speechPreviewStopping || session.speechPreviewFatal || session.recorder.state !== "recording") return;
+    setRecordingHint("录音仍在持续；实时文字预览正在自动重连。", "warning");
+    session.speechRestartTimer = setTimeout(() => startSpeechPreview(session), 900);
+  };
+  session.recognition = recognition;
+  try {
+    recognition.start();
+  } catch {
+    session.speechRestartTimer = setTimeout(() => startSpeechPreview(session), 1200);
+  }
 }
 
-function stopSpeechPreview() {
-  try { state.recording?.recognition?.stop(); } catch {}
+function pauseSpeechPreview(session = state.recording) {
+  if (!session) return;
+  clearTimeout(session.speechRestartTimer);
+  session.speechPreviewGeneration += 1;
+  try { session.recognition?.abort(); } catch {}
+  session.recognition = null;
+}
+
+function stopSpeechPreview(session = state.recording) {
+  if (!session) return;
+  session.speechPreviewStopping = true;
+  pauseSpeechPreview(session);
 }
 
 function renderAll() {

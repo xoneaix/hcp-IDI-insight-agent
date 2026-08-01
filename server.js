@@ -1686,8 +1686,10 @@ async function handleDeckScript(req, res) {
 
 const CONVERSION_JOB_TTL_MS = 2 * 60 * 60 * 1000;
 const CHUNKED_CONVERSION_UPLOAD_TTL_MS = 60 * 60 * 1000;
+const CHUNKED_LIBRARY_UPLOAD_TTL_MS = 2 * 60 * 60 * 1000;
 const conversionJobs = new Map();
 const chunkedConversionUploads = new Map();
+const chunkedLibraryUploads = new Map();
 
 async function cleanupChunkedConversionUploads() {
   const now = Date.now();
@@ -1699,8 +1701,19 @@ async function cleanupChunkedConversionUploads() {
   }
 }
 
+async function cleanupChunkedLibraryUploads() {
+  const now = Date.now();
+  for (const [id, upload] of chunkedLibraryUploads.entries()) {
+    if (now - upload.updatedAt > CHUNKED_LIBRARY_UPLOAD_TTL_MS) {
+      await rm(upload.dir, { recursive: true, force: true }).catch(() => {});
+      chunkedLibraryUploads.delete(id);
+    }
+  }
+}
+
 function cleanupConversionJobs() {
   cleanupChunkedConversionUploads().catch(() => {});
+  cleanupChunkedLibraryUploads().catch(() => {});
   const now = Date.now();
   for (const [id, job] of conversionJobs.entries()) {
     if (now - job.updatedAt > CONVERSION_JOB_TTL_MS) {
@@ -1941,6 +1954,92 @@ function decodeMetadataHeader(req) {
 
 function libraryFilePath(userId, id, filename) {
   return join(LIBRARY_FILE_DIR, String(userId), `${id}${safeUploadSuffix(filename)}`);
+}
+
+function ownsChunkedUpload(upload, user) {
+  return Boolean(upload && String(upload.userId) === String(user?.id));
+}
+
+async function handleChunkedLibraryUploadStart(req, res, user) {
+  cleanupChunkedLibraryUploads().catch(() => {});
+  const payload = await readJson(req, 2_000_000);
+  const meta = redactProductReferences(payload.meta || {});
+  const fileName = redactProductNames(String(payload.fileName || meta.name || "interview.bin")).slice(0, 240);
+  const fileSize = Number(payload.fileSize || 0);
+  const chunkCount = Math.max(1, Math.min(2000, Number(payload.chunkCount || 1)));
+  if (!Number.isFinite(fileSize) || fileSize <= 0 || fileSize > LARGE_UPLOAD_LIMIT) {
+    return json(res, 400, { error: "文件大小无效或超过 2 GB" });
+  }
+  const id = randomUUID();
+  const itemId = randomUUID();
+  const dir = join(JOB_DIR, `medvoice-library-chunks-${id}`);
+  await mkdir(dir, { recursive: true });
+  chunkedLibraryUploads.set(id, {
+    id,
+    itemId,
+    userId: user.id,
+    dir,
+    meta,
+    fileName,
+    mimeType: String(payload.mimeType || "application/octet-stream").slice(0, 160),
+    fileSize,
+    chunkCount,
+    received: new Set(),
+    completedItem: null,
+    startedAt: Date.now(),
+    updatedAt: Date.now()
+  });
+  return json(res, 200, { id, chunkCount, message: "已创建资料库分片上传任务" });
+}
+
+async function handleChunkedLibraryUploadPart(req, res, user, id) {
+  cleanupChunkedLibraryUploads().catch(() => {});
+  const upload = chunkedLibraryUploads.get(id);
+  if (!ownsChunkedUpload(upload, user)) return json(res, 404, { error: "分片上传任务不存在或已过期，请重新保存" });
+  if (upload.completedItem) return json(res, 200, { received: upload.chunkCount, chunkCount: upload.chunkCount, completed: true });
+  const index = Number(req.headers["x-chunk-index"]);
+  if (!Number.isInteger(index) || index < 0 || index >= upload.chunkCount) return json(res, 400, { error: "分片序号无效" });
+  const partPath = join(upload.dir, `${index}.part`);
+  await unlink(partPath).catch(() => {});
+  await streamUploadToFile(req, partPath);
+  upload.received.add(index);
+  upload.updatedAt = Date.now();
+  return json(res, 200, { received: upload.received.size, chunkCount: upload.chunkCount });
+}
+
+async function handleChunkedLibraryUploadComplete(req, res, user, id) {
+  cleanupChunkedLibraryUploads().catch(() => {});
+  const upload = chunkedLibraryUploads.get(id);
+  if (!ownsChunkedUpload(upload, user)) return json(res, 404, { error: "分片上传任务不存在或已过期，请重新保存" });
+  if (upload.completedItem) return json(res, 200, { item: upload.completedItem });
+  if (upload.received.size !== upload.chunkCount) {
+    return json(res, 409, { error: `仍有 ${upload.chunkCount - upload.received.size} 个分片未上传完成` });
+  }
+  const storagePath = libraryFilePath(user.id, upload.itemId, upload.fileName);
+  await mkdir(dirname(storagePath), { recursive: true });
+  await unlink(storagePath).catch(() => {});
+  let mergedSize = 0;
+  try {
+    for (let index = 0; index < upload.chunkCount; index += 1) {
+      const part = await readFile(join(upload.dir, `${index}.part`));
+      mergedSize += part.length;
+      await appendFile(storagePath, part);
+    }
+    if (mergedSize !== upload.fileSize) throw new Error(`文件大小校验失败（收到 ${mergedSize}，应为 ${upload.fileSize}）`);
+    const item = await libraryStore.createItem(user.id, upload.itemId, upload.meta, {
+      fileName: upload.fileName,
+      mimeType: upload.mimeType,
+      fileSize: mergedSize,
+      storagePath
+    });
+    upload.completedItem = item;
+    upload.updatedAt = Date.now();
+    await rm(upload.dir, { recursive: true, force: true }).catch(() => {});
+    return json(res, 200, { item });
+  } catch (error) {
+    await unlink(storagePath).catch(() => {});
+    throw new Error(`资料库分片合并失败：${error.message || "请重试"}`);
+  }
 }
 
 async function removeStoredFiles(paths) {
@@ -2328,6 +2427,17 @@ async function transcribeStoredLibraryItem(userId, id, mode = "diarize") {
 
 async function handleLibrary(req, res, pathname) {
   const user = req.user;
+  if (req.method === "POST" && pathname === "/api/library/uploads/start") {
+    return handleChunkedLibraryUploadStart(req, res, user);
+  }
+  const chunkUploadMatch = pathname.match(/^\/api\/library\/uploads\/([^/]+)\/chunks$/);
+  if (req.method === "POST" && chunkUploadMatch) {
+    return handleChunkedLibraryUploadPart(req, res, user, chunkUploadMatch[1]);
+  }
+  const completeUploadMatch = pathname.match(/^\/api\/library\/uploads\/([^/]+)\/complete$/);
+  if (req.method === "POST" && completeUploadMatch) {
+    return handleChunkedLibraryUploadComplete(req, res, user, completeUploadMatch[1]);
+  }
   if (req.method === "GET" && pathname === "/api/library/items") {
     return json(res, 200, { items: await libraryStore.listItems(user.id) });
   }
