@@ -73,3 +73,34 @@ test("interview library migrates legacy product names in filenames and transcrip
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("interview library deletes only the selected research project", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "medvoice-library-project-delete-"));
+  try {
+    const store = await SqliteInterviewLibraryStore.create(join(directory, "library.sqlite"));
+    const makeItem = (id, projectId, fileName) => store.createItem(7, id, {
+      clientId: fileName.replace(/\..+$/, ""),
+      name: fileName,
+      projectId,
+      projectName: projectId,
+      type: "Patient",
+      status: "已转录"
+    }, {
+      fileName,
+      mimeType: "audio/mp4",
+      fileSize: 1024,
+      storagePath: join(directory, fileName)
+    });
+    await makeItem("33333333-3333-4333-8333-333333333333", "study-a", "a.m4a");
+    await makeItem("44444444-4444-4444-8444-444444444444", "study-b", "b.m4a");
+
+    const deletedPaths = await store.deleteProject(7, "study-a");
+    assert.deepEqual(deletedPaths, [join(directory, "a.m4a")]);
+    const remaining = await store.listItems(7);
+    assert.equal(remaining.length, 1);
+    assert.equal(remaining[0].projectId, "study-b");
+    store.db.close();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

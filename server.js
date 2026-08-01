@@ -2576,7 +2576,12 @@ async function handleProjectWorkspaces(req, res, pathname) {
     return json(res, 200, saved);
   }
   if (req.method === "DELETE") {
-    return json(res, 200, { deleted: await projectWorkspaceStore.delete(userId, projectId) });
+    const storagePaths = await libraryStore.deleteProject(userId, projectId);
+    await removeStoredFiles(storagePaths);
+    return json(res, 200, {
+      deleted: await projectWorkspaceStore.delete(userId, projectId),
+      deletedInterviews: storagePaths.length
+    });
   }
   return json(res, 405, { error: "Method not allowed" });
 }

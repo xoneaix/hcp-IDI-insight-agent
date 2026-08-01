@@ -42,6 +42,74 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 @media(max-width:720px){.sidebar{grid-template-columns:repeat(5,1fr)}.readiness-grid{grid-template-columns:1fr 1fr}.matrix-actions{align-items:flex-start;margin-top:16px;flex-direction:column}.recording-console{grid-template-columns:1fr;grid-template-areas:"state" "options" "time" "actions" "preview"}.recording-actions{justify-content:flex-start}.recording-time{font-size:20px}.outline-upload{grid-template-columns:auto 1fr}.outline-upload button{grid-column:1/-1}}
 @media(max-width:460px){.readiness-grid{grid-template-columns:1fr}.outline-workspace{display:block}.question-panel{margin-top:16px}}
 
+/* Refined ChatGPT-style project and account navigation. */
+.project-switcher{position:relative;padding:14px;margin-bottom:16px;border-color:rgba(255,255,255,.12);border-radius:15px;background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.035));box-shadow:inset 0 1px rgba(255,255,255,.035)}
+.project-name-row{position:relative;grid-template-columns:minmax(0,1fr) 32px;gap:4px;margin-top:8px}
+.project-switcher .project-current-button,.project-switcher .project-more-button{display:flex;align-items:center;height:34px;margin:0;border:0;border-radius:9px;background:transparent;color:#f4f8f6;padding:0;cursor:pointer;transition:background .16s,color .16s}
+.project-switcher .project-current-button{min-width:0;gap:6px;padding:0 7px;font-size:13px;font-weight:700}
+.project-switcher .project-current-button:hover,.project-switcher .project-more-button:hover,.project-switcher .project-more-button[aria-expanded="true"]{background:rgba(255,255,255,.095)}
+.project-current-button>svg{width:14px;height:14px;flex:0 0 auto;fill:none;stroke:#a8beb6;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.project-name-viewport{display:block;min-width:0;flex:1;overflow:hidden;white-space:nowrap}
+#projectNameScroller{display:inline-block;min-width:max-content;will-change:transform}
+.project-name-viewport.is-overflowing:hover #projectNameScroller{animation:projectNamePan 4.6s ease-in-out .35s infinite alternate}
+@keyframes projectNamePan{0%,10%{transform:translateX(0)}90%,100%{transform:translateX(calc(-1 * var(--project-scroll-distance)))}}
+.project-switcher .project-more-button{display:grid;place-items:center;width:32px;padding:0;color:#b6c9c2;font:700 13px/1 system-ui;letter-spacing:1px}
+.project-native-select{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important;clip-path:inset(50%)!important}
+.sidebar-popover{position:absolute;z-index:90;border:1px solid rgba(255,255,255,.12);border-radius:13px;background:#263d38;color:#eff5f1;box-shadow:0 22px 54px rgba(3,18,14,.34);padding:6px;overflow:hidden}
+.sidebar-popover[hidden]{display:none!important}
+.project-picker-menu{top:72px;left:8px;width:calc(100% - 16px);max-height:min(330px,46vh);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#5c756d #263d38}
+.project-actions-menu{top:54px;right:-5px;width:156px}
+.sidebar-popover button{display:flex!important;align-items:center!important;justify-content:flex-start!important;gap:10px!important;width:100%!important;min-height:36px!important;margin:0!important;padding:7px 9px!important;border:0!important;border-radius:8px!important;background:transparent!important;color:#eaf2ee!important;text-align:left!important;font-size:11px!important;font-weight:600!important;cursor:pointer!important}
+.sidebar-popover button:hover,.sidebar-popover button.active{background:rgba(255,255,255,.09)!important}
+.sidebar-popover button svg{display:block;width:17px;height:17px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.sidebar-popover button.danger{margin-top:3px!important;color:#ff8c8f!important}
+.project-picker-entry>span:nth-child(2){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.project-picker-entry em{margin-left:auto;color:#a9bcb5;font-size:8px;font-style:normal;white-space:nowrap}
+.project-picker-check{width:15px;flex:0 0 15px;color:var(--lime);font-size:11px}
+.project-menu-section{margin:5px 7px 3px;padding-top:7px;border-top:1px solid rgba(255,255,255,.1);color:#91a8a0;font:600 8px "DM Mono";letter-spacing:1px}
+.project-menu-empty{margin:6px 9px;color:#91a8a0;font-size:9px}
+.project-mini-actions button{justify-content:center;padding:9px 10px;border-radius:9px;color:#d9e5e0}
+
+.trial-user-card{position:relative;width:100%;min-height:58px;margin-top:10px;padding:9px 10px;border:1px solid rgba(255,255,255,.11);border-radius:12px;background:rgba(255,255,255,.05);color:#eef4ef;text-align:left;cursor:pointer;transition:background .16s,border-color .16s}
+.trial-user-card:hover,.trial-user-card[aria-expanded="true"]{border-color:rgba(223,242,91,.22);background:rgba(255,255,255,.085)}
+.trial-user-card>span{width:34px;height:34px;border:1px solid rgba(223,242,91,.18);border-radius:10px;background:linear-gradient(145deg,#385e53,#294a41);color:#e5f46d;font-size:11px}
+.trial-user-card strong{font-size:11px}.trial-user-card small{margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px;color:#9eb2ab}
+.account-menu-chevron{display:block;width:14px;height:14px;flex:0 0 auto;fill:none;stroke:#a9bdb6;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.account-menu{left:18px;right:18px;bottom:82px;padding:7px}
+.account-menu-identity{display:grid;grid-template-columns:34px minmax(0,1fr);gap:9px;align-items:center;padding:8px 9px 10px}
+.account-menu-identity>span{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:#395c52;color:#e3f26e;font:700 10px "DM Mono"}
+.account-menu-identity strong,.account-menu-identity small{display:block}.account-menu-identity strong{font-size:11px}.account-menu-identity small{margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9fb2ab;font-size:8px}
+.account-menu-divider{height:1px;margin:3px 4px;background:rgba(255,255,255,.1)}
+@media(min-width:1051px){.sidebar-utilities{display:none}}
+
+.topbar{height:68px;border-bottom-color:#e4e9e6;background:linear-gradient(90deg,rgba(248,250,248,.94),rgba(255,255,255,.96));box-shadow:0 5px 22px rgba(29,60,50,.025);backdrop-filter:blur(18px)}
+.breadcrumb{display:flex;align-items:center;min-width:0;color:#8b9792}.breadcrumb strong{max-width:min(48vw,560px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#34483f;font-weight:700}
+.top-actions{gap:8px}.privacy-badge,.api-connect{min-height:32px;padding:0 10px;border-color:#dce7e1;background:rgba(255,255,255,.8);box-shadow:0 3px 10px rgba(31,69,57,.025)}
+.admin-console-button{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:0 11px;border:1px solid #cfded7;border-radius:10px;background:#fff;color:#2e564b;font-size:10px;font-weight:700;cursor:pointer;box-shadow:0 5px 16px rgba(30,64,53,.045);transition:border-color .16s,background .16s,box-shadow .16s}
+.admin-console-button:hover{border-color:#96b3a7;background:#f5faf7;box-shadow:0 8px 20px rgba(30,64,53,.08)}
+.admin-console-button svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
+.admin-console-button em{display:grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#e6f0eb;color:#245c4d;font:700 8px "DM Mono";font-style:normal}
+.admin-console-button[hidden],.admin-console-button em[hidden]{display:none!important}
+@media(max-width:1050px){.project-switcher{display:none}.account-menu{left:auto;right:16px;width:220px}.trial-user-card{padding:7px}.trial-user-card div,.account-menu-chevron{display:none}.trial-user-card>span{margin:auto}}
+@media(max-width:720px){.topbar{height:60px}.privacy-badge{display:none}.admin-console-button span{display:none}.admin-console-button{width:34px;justify-content:center;padding:0}}
+@media(min-width:1051px) and (max-height:860px){
+  .sidebar{padding:15px 14px 12px}
+  .brand-stacked{gap:4px;padding-bottom:11px}
+  .medvoice-logo,.medvoice-logo img{width:132px}
+  .brand strong{font-size:14px}.brand small{font-size:7px}
+  .project-switcher{padding:10px 11px;margin-bottom:10px}
+  .project-name-row{margin-top:5px}
+  .project-mini-actions button{padding:7px 9px}
+  .sidebar-section-label{padding-bottom:5px}
+  .sidebar nav{gap:3px}
+  .nav-item{min-height:37px;padding:3px 7px}
+  .nav-item i{width:27px;height:27px;flex-basis:27px}
+  .agent-status{padding:9px 11px}
+  .agent-status>div{margin-bottom:0}
+  .agent-status p{display:none}
+  .trial-user-card{min-height:51px;margin-top:7px;padding:7px 9px}
+}
+
 /* Sidebar bottom utilities: account/help actions live with the left navigation, not the primary topbar workflow. */
 .sidebar-utilities{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
 .sidebar-utilities .utility-button{min-height:32px;padding:0 9px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.055);color:#c7d7d1;box-shadow:none;font-size:10px;font-weight:600}

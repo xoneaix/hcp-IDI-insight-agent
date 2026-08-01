@@ -219,7 +219,7 @@ function projectDataKey(projectId = state.activeProjectId) {
 }
 
 function currentProject() {
-  return state.projects.find((project) => project.id === state.activeProjectId) || state.projects[0] || { id: DEFAULT_PROJECT_ID, name: DEFAULT_PROJECT_NAME };
+  return state.projects.find((project) => project.id === state.activeProjectId) || state.projects[0] || { id: DEFAULT_PROJECT_ID, name: DEFAULT_PROJECT_NAME, archived: false };
 }
 
 function loadProjects() {
@@ -228,8 +228,8 @@ function loadProjects() {
   hadLocalProjectCatalog = Boolean(storedProjects);
   try { parsed = JSON.parse(storedProjects || "[]"); } catch {}
   state.projects = Array.isArray(parsed) && parsed.length
-    ? parsed.map((project) => ({ id: safeProjectId(project.id), name: redactProductNames(project.name || DEFAULT_PROJECT_NAME).slice(0, 80) }))
-    : [{ id: DEFAULT_PROJECT_ID, name: DEFAULT_PROJECT_NAME }];
+    ? parsed.map((project) => ({ id: safeProjectId(project.id), name: redactProductNames(project.name || DEFAULT_PROJECT_NAME).slice(0, 80), archived: Boolean(project.archived) }))
+    : [{ id: DEFAULT_PROJECT_ID, name: DEFAULT_PROJECT_NAME, archived: false }];
   const active = safeProjectId(localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || state.projects[0].id);
   state.activeProjectId = state.projects.some((project) => project.id === active) ? active : state.projects[0].id;
   state.projectName = currentProject().name;
@@ -356,6 +356,7 @@ function currentProjectWorkspaceSnapshot() {
     matrix: state.matrix,
     report: state.report,
     reportWorkspace: state.reportWorkspace,
+    _projectArchived: Boolean(currentProject().archived),
     _localUpdatedAt: Date.now()
   };
 }
@@ -503,7 +504,10 @@ async function syncProjectWorkspaces() {
     const remoteUpdatedAt = Number(remoteWorkspace?._localUpdatedAt || Date.parse(row.updatedAt) || 0);
     const project = {
       id: projectId,
-      name: redactProductNames(localUpdatedAt > remoteUpdatedAt ? localProject?.name : row.projectName || localProject?.name || DEFAULT_PROJECT_NAME).slice(0, 80)
+      name: redactProductNames(localUpdatedAt > remoteUpdatedAt ? localProject?.name : row.projectName || localProject?.name || DEFAULT_PROJECT_NAME).slice(0, 80),
+      archived: localUpdatedAt > remoteUpdatedAt
+        ? Boolean(localProject?.archived)
+        : remoteWorkspace._projectArchived == null ? Boolean(localProject?.archived) : Boolean(remoteWorkspace._projectArchived)
     };
     mergedProjects.push(project);
     seen.add(projectId);
@@ -529,7 +533,7 @@ async function syncProjectWorkspaces() {
   }
 
   if (!mergedProjects.length) {
-    const project = { id: DEFAULT_PROJECT_ID, name: DEFAULT_PROJECT_NAME };
+    const project = { id: DEFAULT_PROJECT_ID, name: DEFAULT_PROJECT_NAME, archived: false };
     const workspace = { _localUpdatedAt: Date.now() };
     await persistProjectWorkspace(project, workspace);
     mergedProjects.push(project);
@@ -562,7 +566,7 @@ function mergeProjectsFromInterviews(items = state.allInterviews) {
     item.projectId = project.projectId;
     item.projectName = project.projectName;
     if (!known.has(project.projectId)) {
-      state.projects.push({ id: project.projectId, name: project.projectName });
+      state.projects.push({ id: project.projectId, name: project.projectName, archived: false });
       known.add(project.projectId);
     }
   }
@@ -574,6 +578,7 @@ function syncCurrentProjectInterviews() {
 }
 
 function setActiveProject(projectId) {
+  if (!state.projects.some((project) => project.id === safeProjectId(projectId))) return;
   saveCurrentProjectWorkspace();
   state.activeProjectId = safeProjectId(projectId);
   state.projectName = currentProject().name;
@@ -584,12 +589,34 @@ function setActiveProject(projectId) {
   showView(savedView(), { updateHash: false, scroll: false });
 }
 
+function projectMenuEntry(project) {
+  const active = project.id === state.activeProjectId;
+  return `<button class="project-picker-entry${active ? " active" : ""}" type="button" role="menuitem" data-project-id="${escapeHTML(project.id)}" title="${escapeHTML(project.name)}"><span class="project-picker-check" aria-hidden="true">${active ? "✓" : ""}</span><span>${escapeHTML(project.name)}</span>${project.archived ? '<em>已归档</em>' : ""}</button>`;
+}
+
+function updateProjectNameOverflow() {
+  const viewport = $(".project-name-viewport");
+  const name = $("#projectNameScroller");
+  if (!viewport || !name) return;
+  const distance = Math.max(0, name.scrollWidth - viewport.clientWidth);
+  viewport.classList.toggle("is-overflowing", distance > 2);
+  viewport.style.setProperty("--project-scroll-distance", `${distance}px`);
+}
+
 function renderProjectSwitcher() {
   const select = $("#projectSelect");
   if (!select) return;
-  select.innerHTML = state.projects.map((project) => `<option value="${escapeHTML(project.id)}" ${project.id === state.activeProjectId ? "selected" : ""}>${escapeHTML(project.name)}</option>`).join("");
+  const activeProjects = state.projects.filter((project) => !project.archived);
+  const archivedProjects = state.projects.filter((project) => project.archived);
+  select.innerHTML = `${activeProjects.length ? `<optgroup label="研究项目">${activeProjects.map((project) => `<option value="${escapeHTML(project.id)}" ${project.id === state.activeProjectId ? "selected" : ""}>${escapeHTML(project.name)}</option>`).join("")}</optgroup>` : ""}${archivedProjects.length ? `<optgroup label="已归档">${archivedProjects.map((project) => `<option value="${escapeHTML(project.id)}" ${project.id === state.activeProjectId ? "selected" : ""}>${escapeHTML(project.name)}</option>`).join("")}</optgroup>` : ""}`;
+  const picker = $("#projectPickerMenu");
+  picker.innerHTML = `${activeProjects.length ? activeProjects.map(projectMenuEntry).join("") : '<p class="project-menu-empty">暂无进行中的研究</p>'}${archivedProjects.length ? `<div class="project-menu-section">已归档</div>${archivedProjects.map(projectMenuEntry).join("")}` : ""}`;
+  $("#projectNameScroller").textContent = state.projectName;
+  $("#projectPickerButton").title = `切换研究项目：${state.projectName}`;
+  $("#archiveProjectLabel").textContent = currentProject().archived ? "取消归档" : "归档";
   $("#projectLabel").textContent = state.projectName;
   $("#breadcrumbProject").textContent = state.projectName;
+  requestAnimationFrame(updateProjectNameOverflow);
 }
 
 function toast(message, duration = 2600) {
@@ -943,14 +970,18 @@ async function checkPortalSession() {
       location.assign("/login?change=1");
       return null;
     }
-    $("#adminAccess").hidden = data.user?.role !== "admin" || !state.authRequired;
+    const isAdmin = data.user?.role === "admin" && state.authRequired;
+    $("#adminAccess").hidden = !isAdmin;
+    $("#accountAdmin").hidden = !isAdmin;
     $("#portalLogout").hidden = !state.authRequired;
-    if (data.user?.role === "admin" && state.authRequired) {
+    if (isAdmin) {
       try {
         const requestsResponse = await fetch(`${API_BASE}/api/admin/requests`, { cache: "no-store" });
         const requestsData = await requestsResponse.json().catch(() => ({}));
         const pendingCount = (requestsData.requests || []).filter((item) => item.status === "pending").length;
-        $("#adminAccess").textContent = pendingCount ? `Access 管理 · ${pendingCount}` : "Access 管理";
+        $("#adminAccessLabel").textContent = "管理控制台";
+        $("#adminAccessCount").textContent = String(pendingCount);
+        $("#adminAccessCount").hidden = pendingCount === 0;
         $("#adminAccess").title = pendingCount ? `${pendingCount} 个试用申请待审批` : "暂无待审批申请";
       } catch (error) {
         console.warn("MedVoice admin request badge failed", error);
@@ -971,6 +1002,9 @@ function renderTrialUserIdentity(user) {
   $("#trialUserInitials").textContent = identity.initials;
   $("#trialUserName").textContent = identity.displayName;
   $("#trialUserEmail").textContent = identity.email;
+  $("#accountMenuInitials").textContent = identity.initials;
+  $("#accountMenuName").textContent = identity.displayName;
+  $("#accountMenuEmail").textContent = identity.email;
   card.title = `当前试用用户：${identity.email}`;
 }
 
@@ -3992,25 +4026,121 @@ function renameCurrentProject() {
   saveCurrentProjectWorkspace();
   renderAll();
   state.interviews.forEach((_, index) => persistInterview(index));
+  closeSidebarPopovers();
   toast("研究项目名称已更新");
+}
+
+function addProject(name) {
+  const project = { id: createProjectId(), name: String(name || `新研究 ${state.projects.length + 1}`).trim().slice(0, 80), archived: false };
+  state.projects.push(project);
+  return project;
 }
 
 function createProject() {
   const name = prompt("请输入新研究项目名称", `新研究 ${state.projects.length + 1}`);
   if (!name?.trim()) return;
-  const project = { id: createProjectId(), name: name.trim().slice(0, 80) };
-  state.projects.push(project);
+  const project = addProject(name);
   setActiveProject(project.id);
   saveCurrentProjectWorkspace();
   showView("transcripts");
   toast(`已创建研究：${project.name}`);
 }
 
+function closeSidebarPopovers(except = null) {
+  for (const menu of [$("#projectPickerMenu"), $("#projectActionsMenu"), $("#accountMenu")]) {
+    if (!menu || menu === except) continue;
+    menu.hidden = true;
+  }
+  $("#projectPickerButton")?.setAttribute("aria-expanded", String(except === $("#projectPickerMenu")));
+  $("#projectMenuButton")?.setAttribute("aria-expanded", String(except === $("#projectActionsMenu")));
+  $("#trialUserCard")?.setAttribute("aria-expanded", String(except === $("#accountMenu")));
+}
+
+function toggleSidebarPopover(menu, trigger) {
+  const open = menu.hidden;
+  closeSidebarPopovers(open ? menu : null);
+  menu.hidden = !open;
+  trigger.setAttribute("aria-expanded", String(open));
+}
+
+function toggleArchiveCurrentProject() {
+  const project = currentProject();
+  project.archived = !project.archived;
+  saveProjects();
+  saveCurrentProjectWorkspace();
+  closeSidebarPopovers();
+  if (project.archived) {
+    const next = state.projects.find((candidate) => !candidate.archived && candidate.id !== project.id) || addProject("新研究");
+    setActiveProject(next.id);
+    toast(`“${project.name}”已归档，可在项目列表中恢复`);
+  } else {
+    renderAll();
+    toast(`“${project.name}”已恢复`);
+  }
+}
+
+async function deleteCurrentProject() {
+  const project = currentProject();
+  const items = state.allInterviews.filter((item) => safeProjectId(item.projectId || DEFAULT_PROJECT_ID) === project.id);
+  const warning = `确定永久删除“${project.name}”吗？\n\n将同步删除该项目的工作区、${items.length} 份访谈资料及本机缓存，此操作无法撤销。`;
+  if (!confirm(warning)) return;
+  closeSidebarPopovers();
+  const timer = workspaceSaveTimers.get(project.id);
+  if (timer) clearTimeout(timer);
+  workspaceSaveTimers.delete(project.id);
+  try {
+    const response = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(project.id)}`, { method: "DELETE" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `删除失败（${response.status}）`);
+    for (const item of items) await deleteLocalInterview(item, { remember: false });
+    const itemKeys = new Set(items.map((item) => item.serverId || item.id));
+    state.allInterviews = state.allInterviews.filter((item) => !itemKeys.has(item.serverId || item.id));
+    removeSamplesFromOutlineGuides(items);
+    localStorage.removeItem(projectDataKey(project.id));
+    state.projects = state.projects.filter((candidate) => candidate.id !== project.id);
+    if (!state.projects.length) addProject("未命名访谈项目");
+    const next = state.projects.find((candidate) => !candidate.archived) || state.projects[0];
+    state.activeProjectId = next.id;
+    state.projectName = next.name;
+    saveProjects();
+    loadCurrentProjectWorkspace();
+    syncCurrentProjectInterviews();
+    renderAll();
+    showView(savedView(), { updateHash: false, scroll: false });
+    toast(`“${project.name}”已删除`);
+  } catch (error) {
+    toast(`研究项目删除失败：${error.message}`, 5200);
+  }
+}
+
 $("#projectSelect").addEventListener("change", (event) => setActiveProject(event.target.value));
 $("#renameProject").addEventListener("click", renameCurrentProject);
+$("#archiveProject").addEventListener("click", toggleArchiveCurrentProject);
+$("#deleteProject").addEventListener("click", deleteCurrentProject);
 $("#createProject").addEventListener("click", createProject);
+$("#projectPickerButton").addEventListener("click", (event) => toggleSidebarPopover($("#projectPickerMenu"), event.currentTarget));
+$("#projectMenuButton").addEventListener("click", (event) => toggleSidebarPopover($("#projectActionsMenu"), event.currentTarget));
+$("#projectPickerMenu").addEventListener("click", (event) => {
+  const entry = event.target.closest("[data-project-id]");
+  if (!entry) return;
+  closeSidebarPopovers();
+  setActiveProject(entry.dataset.projectId);
+});
+$("#trialUserCard").addEventListener("click", (event) => toggleSidebarPopover($("#accountMenu"), event.currentTarget));
+$("#accountProfile").addEventListener("click", () => {
+  closeSidebarPopovers();
+  toast(`${state.currentUser?.email || "当前账户"} · ${state.currentUser?.role === "admin" ? "管理员" : "试用用户"}`);
+});
+$("#accountAdmin").addEventListener("click", () => { location.href = ADMIN_URL; });
+$("#accountHelp").addEventListener("click", () => { closeSidebarPopovers(); $("#helpButton").click(); });
+$("#accountLogout").addEventListener("click", () => { closeSidebarPopovers(); $("#portalLogout").click(); });
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".project-name-row,.trial-user-card,.account-menu")) closeSidebarPopovers();
+});
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeSidebarPopovers(); });
 window.addEventListener("hashchange", () => showView(savedView(), { updateHash: false }));
 window.addEventListener("resize", () => {
+  updateProjectNameOverflow();
   updateTranscriptTableScrollState();
   updateRolePreviewScrollState();
   updateMatrixScrollState();
