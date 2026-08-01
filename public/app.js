@@ -1429,7 +1429,18 @@ function uploadLibraryItem(item, onProgress) {
 }
 
 async function persistAllInterviews() {
-  await Promise.all(state.interviews.map((_, index) => persistInterview(index)));
+  for (let index = 0; index < state.interviews.length; index += 1) await persistInterview(index);
+}
+
+async function retryPendingAccountSaves(options = {}) {
+  if (!navigator.onLine || !state.libraryLoaded) return;
+  const pendingIndexes = state.interviews
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => !item.serverId && item.file && item.localPersisted && !item.persisting)
+    .map(({ index }) => index);
+  if (!pendingIndexes.length) return;
+  if (!options.silent) toast(`网络已恢复，正在续传 ${pendingIndexes.length} 份本机备份`);
+  for (const index of pendingIndexes) await persistInterview(index);
 }
 
 async function loadInterviewLibrary() {
@@ -1492,6 +1503,7 @@ async function loadInterviewLibrary() {
     syncCurrentProjectInterviews();
     state.libraryLoaded = true;
     renderAll();
+    setTimeout(() => retryPendingAccountSaves({ silent: true }), 800);
     const repairResults = await Promise.allSettled(identityRepairs.map(persistInterviewIdentityRepair));
     const repairFailures = repairResults.filter((result) => result.status === "rejected").length;
     if (repairFailures) {
@@ -1624,6 +1636,7 @@ function renderTranscripts() {
       const fileSize = item.file?.size || item.fileSize || 0;
       const uploadProgress = Number.isFinite(item.uploadProgress) ? Math.min(100, Math.max(0, item.uploadProgress)) : null;
       const isUploading = item.persisting || (uploadProgress !== null && uploadProgress < 100) || /正在保存到账号资料库/.test(item.progressText || "");
+      const needsAccountSync = !item.serverId && Boolean(item.file) && item.localPersisted;
       const transcribeDisabled = !isMedia || isUploading || isTranscribing || isAudioPreprocessing;
       const fileKind = /\.(txt|md|csv|json)$/i.test(item.name) ? "DOC" : /\.(mp4|mov|mkv|webm)$/i.test(item.name) ? "VID" : "AUD";
       return `<tr>
@@ -1632,7 +1645,7 @@ function renderTranscripts() {
         <td><select class="type-select" data-index="${index}" aria-label="受访者类型"><option value="HCP" ${normalizeRespondentType(item.type) === "HCP" ? "selected" : ""}>HCP</option><option value="Patient" ${normalizeRespondentType(item.type) === "Patient" ? "selected" : ""}>Patient</option></select></td>
         <td>${escapeHTML(item.duration)}</td>
         <td><span class="status-pill ${statusClass}">${escapeHTML(item.status)}</span>${item.progressText ? `<small class="transcript-progress">${escapeHTML(item.progressText)}</small>` : ""}${uploadProgress !== null ? `<span class="upload-progress-bar" aria-label="上传保存进度 ${uploadProgress}%"><i style="width:${uploadProgress}%"></i></span>` : ""}</td>
-        <td><div class="row-actions"><button class="transcribe-button ${transcribeClass}" data-index="${index}" ${transcribeDisabled ? "disabled" : ""}>${actionLabel.startsWith("重新") ? refreshActionIcon : ""}<span>${escapeHTML(actionLabel)}</span></button><button class="role-row-button" data-index="${index}" ${canIdentifyRole ? "" : "disabled"}>${roleActionLabel.startsWith("重新") ? refreshActionIcon : ""}<span>${escapeHTML(roleActionLabel)}</span></button></div></td>
+        <td><div class="row-actions">${needsAccountSync ? `<button class="retry-save-button" data-index="${index}" ${isUploading ? "disabled" : ""}>${refreshActionIcon}<span>同步账号</span></button>` : ""}<button class="transcribe-button ${transcribeClass}" data-index="${index}" ${transcribeDisabled ? "disabled" : ""}>${actionLabel.startsWith("重新") ? refreshActionIcon : ""}<span>${escapeHTML(actionLabel)}</span></button><button class="role-row-button" data-index="${index}" ${canIdentifyRole ? "" : "disabled"}>${roleActionLabel.startsWith("重新") ? refreshActionIcon : ""}<span>${escapeHTML(roleActionLabel)}</span></button></div></td>
       </tr>`;
     }).join("");
   }
@@ -1655,6 +1668,11 @@ function renderTranscripts() {
     await persistInterview(index);
   }));
   $$(".transcribe-button").forEach((button) => button.addEventListener("click", () => transcribeInterview(+button.dataset.index)));
+  $$(".retry-save-button").forEach((button) => button.addEventListener("click", async () => {
+    const index = +button.dataset.index;
+    await persistInterview(index);
+    if (state.interviews[index]?.serverId) toast(`${state.interviews[index].id} 已续传并保存到账户资料库`);
+  }));
   $$(".role-row-button").forEach((button) => button.addEventListener("click", () => identifyRoleForInterview(+button.dataset.index)));
   $("#retryLibraryLoad")?.addEventListener("click", loadInterviewLibrary);
   const transcriptTableScroll = $("#transcriptTableScroll");
@@ -3704,6 +3722,7 @@ document.addEventListener("keydown", (event) => {
 }, true);
 window.addEventListener("scroll", hideConfidencePopover, true);
 window.addEventListener("resize", hideConfidencePopover);
+window.addEventListener("online", () => retryPendingAccountSaves());
 $("#cancelAnalysis").addEventListener("click", () => $("#analysisDialog").close());
 $("#uploadButton").addEventListener("click", () => $("#fileInput").click());
 $("#browseButton")?.addEventListener("click", (event) => { event.stopPropagation(); $("#fileInput").click(); });

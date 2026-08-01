@@ -140,8 +140,9 @@ button:disabled{cursor:not-allowed;opacity:.48;box-shadow:none}.record-button,.s
 .transcript-table .status-pill{padding:5px 8px;border-radius:999px;font-weight:600}
 .transcript-table .transcript-progress{max-width:205px;margin-top:6px;color:#8a6b34;line-height:1.55}
 .transcript-table .row-actions{width:100%;justify-content:center;gap:8px;flex-wrap:nowrap}
-.transcript-table .transcribe-button,.transcript-table .role-row-button{min-width:76px;height:31px;border-radius:8px}
-.transcript-table .transcribe-button,.transcript-table .role-row-button{display:inline-flex;align-items:center;justify-content:center;gap:5px}
+.transcript-table .transcribe-button,.transcript-table .role-row-button,.transcript-table .retry-save-button{min-width:76px;height:31px;border-radius:8px}
+.transcript-table .transcribe-button,.transcript-table .role-row-button,.transcript-table .retry-save-button{display:inline-flex;align-items:center;justify-content:center;gap:5px}
+.transcript-table .retry-save-button{border:1px solid #d8b46a;background:#fffaf0;color:#8a6321;padding:6px 9px;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap}.transcript-table .retry-save-button:hover{background:#fff4dc;border-color:#c89d48}.transcript-table .retry-save-button:disabled{opacity:.5;cursor:not-allowed}
 .refresh-action-icon{display:block;width:12px;height:12px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .transcript-table .library-sync{height:150px;padding:30px;text-align:center;white-space:normal}
 .library-sync>strong,.library-sync>small{display:block}
