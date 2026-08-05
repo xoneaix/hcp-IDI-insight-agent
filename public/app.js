@@ -477,6 +477,7 @@ function configurePreviewMode() {
   $("#modeLabel").style.color = "#dff25b";
   $("#apiSettingsLabel").textContent = "功能已锁定";
   $("#apiSettingsButton").classList.remove("connected");
+  $("#apiSettingsButton").hidden = true;
   $("#trialUserCard").hidden = false;
   $("#trialUserInitials").textContent = "VM";
   $("#trialUserName").textContent = "访客模式";
@@ -941,8 +942,11 @@ async function checkHealth() {
     state.apiKeySource = data.apiKeySource || "none";
     $("#modeLabel").textContent = state.apiConfigured ? "AI 已连接" : "待配置 API";
     $("#modeLabel").style.color = state.apiConfigured ? "#dff25b" : "#f0b8a0";
-    $("#apiSettingsLabel").textContent = state.apiKeySource === "server" ? "AI 企业服务" : state.apiConfigured ? "AI 已连接" : "连接 AI";
-    $("#apiSettingsButton").classList.toggle("connected", state.apiConfigured);
+    const apiSettingsButton = $("#apiSettingsButton");
+    const isEnterpriseManaged = state.apiKeySource === "server";
+    $("#apiSettingsLabel").textContent = state.apiConfigured ? "AI 设置" : "连接 AI";
+    apiSettingsButton.classList.toggle("connected", state.apiConfigured);
+    apiSettingsButton.hidden = isEnterpriseManaged || state.previewMode;
     return data;
   } catch (error) {
     state.apiConfigured = false;
@@ -951,6 +955,7 @@ async function checkHealth() {
     $("#modeLabel").style.color = "#f0b8a0";
     $("#apiSettingsLabel").textContent = "服务未启动";
     $("#apiSettingsButton").classList.remove("connected");
+    $("#apiSettingsButton").hidden = state.previewMode;
     return null;
   }
 }
